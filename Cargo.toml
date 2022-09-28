@@ -5,7 +5,18 @@ edition = "2021"
 description = "A simpler and more direct Web UI alternative for Atlassian's Jira website"
 repository = "https://github.com/sitegui/kaiju"
 license = "MIT OR Apache-2.0"
+authors = ["Guilherme <sitegui@sitegui.com.br>"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+anyhow = { version = "1.0.65", features = ["backtrace"] }
+clap = { version = "3.2.22", features = ["derive"] }
+directories = "4.0.1"
+lazy_static = "1.4.0"
+scrawl = "1.1.0"
+serde = { version = "1.0.145", features = ["derive"] }
+serde_json = "1.0.85"
+toml = "0.5.9"
+tracing = "0.1.36"
+tracing-subscriber = "0.3.15"
