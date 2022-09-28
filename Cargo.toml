@@ -6,6 +6,8 @@ description = "A simpler and more direct Web UI alternative for Atlassian's Jira
 repository = "https://github.com/sitegui/kaiju"
 license = "MIT OR Apache-2.0"
 authors = ["Guilherme <sitegui@sitegui.com.br>"]
+keywords = ["jira", "terminal", "issue-tracker", "web-interface"]
+categories = ["command-line-utilities", "development-tools"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
