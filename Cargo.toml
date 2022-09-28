@@ -1,0 +1,11 @@
+[package]
+name = "kaiju"
+version = "0.1.0"
+edition = "2021"
+description = "A simpler and more direct Web UI alternative for Atlassian's Jira website"
+repository = "https://github.com/sitegui/kaiju"
+license = "MIT OR Apache-2.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
