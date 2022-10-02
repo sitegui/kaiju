@@ -1,8 +1,10 @@
+mod ask_user_edit;
 mod commands;
 mod config;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+use directories::ProjectDirs;
 
 #[derive(Debug, Parser)]
 #[clap(author, version, about)]
@@ -24,10 +26,13 @@ enum Command {
 fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
+    let project_dirs = ProjectDirs::from("", "sitegui", "kaiju")
+        .context("Could not determine local configuration directory")?;
+
     let args = Args::parse();
 
     match args.command {
-        Command::EditConfig => commands::edit_config::edit_config(),
+        Command::EditConfig => commands::edit_config::edit_config(&project_dirs),
         Command::CreateIssue => commands::create_issue::create_issue(),
         Command::Open => commands::open::open(),
     }

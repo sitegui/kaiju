@@ -1,3 +1,10 @@
+# This is the template config file, which was opened in your default editor.
+# If you want to use a different editor, please change your `VISUAL` (or `EDITOR`) environment
+# variable.
+# Some examples:
+# - If you use VS Code: VISUAL='code --wait'
+# - If you use IntelliJ: VISUAL='idea --wait'
+
 # Create a new API token in https://id.atlassian.com/manage-profile/security/api-tokens and paste it
 # here
 token = ""

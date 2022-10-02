@@ -14,15 +14,12 @@ pub struct Config {
 const DEFAULT_CONFIG: &str = include_str!("../resources/default_config.toml");
 
 impl Config {
-    pub fn default_path() -> Result<PathBuf> {
-        let project_dirs = ProjectDirs::from("", "sitegui", "kaiju")
-            .context("Could not determine local configuration directory")?;
-
+    pub fn default_path(project_dirs: &ProjectDirs) -> Result<PathBuf> {
         Ok(project_dirs.config_dir().join("config.toml"))
     }
 
-    pub fn read_contents() -> Result<String> {
-        let path = Config::default_path()?;
+    pub fn read_contents(project_dirs: &ProjectDirs) -> Result<String> {
+        let path = Config::default_path(project_dirs)?;
 
         match fs::read_to_string(path) {
             Err(error) if error.kind() == ErrorKind::NotFound => Ok(DEFAULT_CONFIG.to_string()),
@@ -31,12 +28,12 @@ impl Config {
         }
     }
 
-    pub fn write_contents(contents: String) -> Result<()> {
+    pub fn write_contents(project_dirs: &ProjectDirs, contents: String) -> Result<()> {
         tracing::debug!("Will save {:?}", contents);
 
         toml::from_str::<Config>(&contents).context("The config seems invalid")?;
 
-        let path = Config::default_path()?;
+        let path = Config::default_path(project_dirs)?;
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -45,8 +42,8 @@ impl Config {
         Ok(())
     }
 
-    pub fn new() -> Result<Self> {
-        let mut config: Config = toml::from_str(&Config::read_contents()?)?;
+    pub fn new(project_dirs: &ProjectDirs) -> Result<Self> {
+        let mut config: Config = toml::from_str(&Config::read_contents(project_dirs)?)?;
 
         if config.token.as_deref() == Some("") {
             config.token = None;
