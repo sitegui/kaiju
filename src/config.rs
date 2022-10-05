@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::ErrorKind;
 use std::path::PathBuf;
@@ -9,6 +10,22 @@ use serde::Deserialize;
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
     token: Option<String>,
+    issue_field: BTreeMap<String, IssueFieldConfig>,
+    value_bag: BTreeMap<String, BTreeMap<String, String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct IssueFieldConfig {
+    field: String,
+    #[serde(flatten)]
+    values: IssueFieldValuesConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum IssueFieldValuesConfig {
+    Simple { values: Vec<String> },
+    FromBag { values_from: String },
 }
 
 const DEFAULT_CONFIG: &str = include_str!("../resources/default_config.toml");
@@ -31,12 +48,18 @@ impl Config {
     pub fn write_contents(project_dirs: &ProjectDirs, contents: String) -> Result<()> {
         tracing::debug!("Will save {:?}", contents);
 
-        toml::from_str::<Config>(&contents).context("The config seems invalid")?;
+        if let Err(error) = toml::from_str::<Config>(&contents) {
+            tracing::warn!(
+                "The new contents of the config file seem invalid: {}",
+                error
+            );
+        }
 
         let path = Config::default_path(project_dirs)?;
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
+        tracing::info!("Will update {}", path.display());
         fs::write(path, contents)?;
 
         Ok(())
