@@ -5,6 +5,56 @@
 # - If you use VS Code: VISUAL='code --wait'
 # - If you use IntelliJ: VISUAL='idea --wait'
 
+# Your login email
+email = ""
 # Create a new API token in https://id.atlassian.com/manage-profile/security/api-tokens and paste it
 # here
 token = ""
+
+# Declare some well-known issue fields, that can be easily created.
+# What follows is just an example, you should adapt it to your specific Jira installation
+[issue_field.Project]
+# The field path in the JSON API
+# See documentation at: https://docs.atlassian.com/software/jira/docs/api/REST/9.2.0/#api/2/issue-createIssue
+field = "fields.project.key"
+# A fixed list of suggestions. The user usually chose one of them, but can also type a different one
+values = ["WEB", "BACKEND", "APP"]
+
+[issue_field.Type]
+field = "fields.issuetype.name"
+values = ["Story", "Bug", "Epic"]
+
+[issue_field.Assignee]
+field = "fields.assignee.accountId"
+# Sometimes it's better to separate the list of possible values into a "value bag".
+# This allows the same list to be reused by different fields and also to given the values labels.
+# This is useful for users, which are identified by their opaque account ids in the API
+values_from = "users"
+
+[issue_field.Epic]
+field = "fields.parent.key"
+values_from = "epics"
+
+[issue_field.Transition]
+field = "transition.id"
+values_from = "transitions"
+
+[issue_field.Subsystems]
+# If a field is a list, you can put up to one "[]" symbol to indicate where the list should be
+# created
+field = "fields.customfield_77[]"
+values_from = ["fire", "water", "wind", "earth"]
+
+[value_bag.users]
+me = "823483242"
+Alice = "392923423"
+Bob = "23446662"
+
+[value_bag.epics]
+"MVP" = "WEB-123"
+"Make CEO happy" = "WEB-311"
+
+[value_bag.transitions]
+"Design" = "1"
+"Implement" = "11"
+"Review" = "111"

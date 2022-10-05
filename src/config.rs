@@ -9,7 +9,8 @@ use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
-    token: Option<String>,
+    email: String,
+    token: String,
     issue_field: BTreeMap<String, IssueFieldConfig>,
     value_bag: BTreeMap<String, BTreeMap<String, String>>,
 }
@@ -66,11 +67,7 @@ impl Config {
     }
 
     pub fn new(project_dirs: &ProjectDirs) -> Result<Self> {
-        let mut config: Config = toml::from_str(&Config::read_contents(project_dirs)?)?;
-
-        if config.token.as_deref() == Some("") {
-            config.token = None;
-        }
+        let config: Config = toml::from_str(&Config::read_contents(project_dirs)?)?;
 
         tracing::debug!("Loaded config {:?}", config);
 
