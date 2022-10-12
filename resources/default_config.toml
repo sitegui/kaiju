@@ -13,36 +13,46 @@ token = ""
 
 # Declare some well-known issue fields, that can be easily created.
 # What follows is just an example, you should adapt it to your specific Jira installation
-[issue_field.Project]
+[[issue_fields]]
+# A human-readable name, used in the kaiju code block
+name = "Project"
 # The field path in the JSON API
 # See documentation at: https://docs.atlassian.com/software/jira/docs/api/REST/9.2.0/#api/2/issue-createIssue
-field = "fields.project.key"
+# Use `.` to represent nested objects and `[]` to represent a list.
+# You can put up to one "[]" symbol to indicate where the list should be created, see one example below.
+api_field = "fields.project.key"
 # A fixed list of suggestions. The user usually chose one of them, but can also type a different one
 values = ["WEB", "BACKEND", "APP"]
+default_value = "WEB"
 
-[issue_field.Type]
-field = "fields.issuetype.name"
+[[issue_fields]]
+name = "Type"
+api_field = "fields.issuetype.name"
 values = ["Story", "Bug", "Epic"]
+default_value = "Story"
 
-[issue_field.Assignee]
-field = "fields.assignee.accountId"
+[[issue_fields]]
+name = "Assignee"
+api_field = "fields.assignee.accountId"
 # Sometimes it's better to separate the list of possible values into a "value bag".
 # This allows the same list to be reused by different fields and also to given the values labels.
 # This is useful for users, which are identified by their opaque account ids in the API
 values_from = "users"
+default_value = "me"
 
-[issue_field.Epic]
-field = "fields.parent.key"
+[[issue_fields]]
+name = "Epic"
+api_field = "fields.parent.key"
 values_from = "epics"
 
-[issue_field.Transition]
-field = "transition.id"
+[[issue_fields]]
+name = "Transition"
+api_field = "transition.id"
 values_from = "transitions"
 
-[issue_field.Subsystems]
-# If a field is a list, you can put up to one "[]" symbol to indicate where the list should be
-# created
-field = "fields.customfield_77[]"
+[[issue_fields]]
+name = "Subsystems"
+api_field = "fields.customfield_77[]"
 values_from = ["fire", "water", "wind", "earth"]
 
 [value_bag.users]

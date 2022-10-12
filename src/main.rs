@@ -33,7 +33,7 @@ fn main() -> Result<()> {
 
     match args.command {
         Command::EditConfig => commands::edit_config::edit_config(&project_dirs),
-        Command::CreateIssue => commands::create_issue::create_issue(),
+        Command::CreateIssue => commands::create_issue::create_issue(&project_dirs),
         Command::Open => commands::open::open(),
     }
 }

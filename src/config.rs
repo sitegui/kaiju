@@ -9,17 +9,19 @@ use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
-    email: String,
-    token: String,
-    issue_field: BTreeMap<String, IssueFieldConfig>,
-    value_bag: BTreeMap<String, BTreeMap<String, String>>,
+    pub email: String,
+    pub token: String,
+    pub issue_fields: Vec<IssueFieldConfig>,
+    pub value_bag: BTreeMap<String, BTreeMap<String, String>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct IssueFieldConfig {
-    field: String,
+    pub name: String,
+    pub api_field: String,
     #[serde(flatten)]
-    values: IssueFieldValuesConfig,
+    pub values: IssueFieldValuesConfig,
+    pub default_value: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
