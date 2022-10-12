@@ -1,4 +1,6 @@
 use std::process::Command;
+use std::thread::sleep;
+use std::time::Duration;
 use std::{env, fs};
 
 use anyhow::{ensure, Context, Result};
@@ -46,6 +48,13 @@ pub fn ask_user_edit(
         status
     );
 
+    // Ugly hack: in my tests, it seems that IntelliJ takes a while to save the modified file
+    // **after** returning from the command line :/
+    // I don't know another safer way to detect whether the file was actually save, so I will just
+    // sleep here and hope for the best.
+    sleep(Duration::from_secs(1));
+
     let new_contents = fs::read_to_string(&temp_path)?;
+
     Ok(new_contents)
 }
