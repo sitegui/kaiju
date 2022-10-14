@@ -9,6 +9,7 @@ use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
+    pub api_host: String,
     pub email: String,
     pub token: String,
     pub issue_fields: Vec<IssueFieldConfig>,

@@ -5,6 +5,8 @@
 # - If you use VS Code: VISUAL='code --wait'
 # - If you use IntelliJ: VISUAL='idea --wait'
 
+# The API host
+api_host = "https://your-domain.atlassian.net"
 # Your login email
 email = ""
 # Create a new API token in https://id.atlassian.com/manage-profile/security/api-tokens and paste it
