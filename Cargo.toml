@@ -1,6 +1,6 @@
 [package]
 name = "kaiju"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "A simpler and more direct Web UI alternative for Atlassian's Jira website"
 repository = "https://github.com/sitegui/kaiju"

@@ -55,7 +55,7 @@ values_from = "transitions"
 [[issue_fields]]
 name = "Subsystems"
 api_field = "fields.customfield_77[]"
-values_from = ["fire", "water", "wind", "earth"]
+values = ["fire", "water", "wind", "earth"]
 
 [value_bag.users]
 me = "823483242"
