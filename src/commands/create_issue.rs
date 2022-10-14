@@ -7,7 +7,7 @@ use directories::ProjectDirs;
 use itertools::Itertools;
 use serde_json::{Map, Value};
 
-use crate::config::{Config, IssueFieldConfig, IssueFieldValuesConfig};
+use crate::config::{Config, IssueFieldValuesConfig};
 
 pub fn create_issue(project_dirs: &ProjectDirs) -> Result<()> {
     let config: Config = Config::new(project_dirs)?;
@@ -26,9 +26,15 @@ pub fn create_issue(project_dirs: &ProjectDirs) -> Result<()> {
             .and_then(|issue| prepare_api_body(&config, issue));
         match maybe_api_body {
             Err(error) => {
-                tracing::warn!("Failed to parse issue: {}", error);
-                tracing::warn!("Please edit it to fix the problem");
-                tracing::warn!("If you want to abandon the process, provide an empty file");
+                issue_markdown = format!(
+                    "-- Failed to parse issue: {:#}\n\
+                    -- Please edit it to fix the problem\n\
+                    -- If you want to abandon the process, provide an empty file\n\
+                    {}",
+                    error, issue_markdown
+                );
+
+                tracing::warn!("Failed to parse issue: {}. Please retry", error);
             }
             Ok(api_body) => break api_body,
         }
@@ -70,7 +76,7 @@ fn write_default_kaiju_code(contents: &mut String, config: &Config) -> Result<()
                 match config.value_bag.get(values_from) {
                     None => {
                         tracing::warn!(
-                            "Missing value bag {} for field {}",
+                            "Missing value bag {:?} for field {:?}",
                             values_from,
                             field.name
                         );
@@ -126,7 +132,7 @@ struct CreateIssue {
 }
 
 fn parse_issue_markdown(source: &str) -> Result<CreateIssue> {
-    let mut lines = source.lines();
+    let mut lines = source.lines().skip_while(|line| line.starts_with("-- "));
 
     let summary = lines
         .next()
@@ -146,7 +152,7 @@ fn parse_issue_markdown(source: &str) -> Result<CreateIssue> {
             } else if !line.starts_with('#') {
                 let (command, value) = line.split_once(':').with_context(|| {
                     format!(
-                        "Kaiju command must have a colon (:) separating name and value in {}",
+                        "Kaiju command must have a colon (:) separating name and value in {:?}",
                         line
                     )
                 })?;
@@ -183,28 +189,80 @@ fn prepare_api_body(config: &Config, issue: CreateIssue) -> Result<Value> {
     set_in_body(&mut body, "fields.description", issue.description)?;
 
     for (name, values) in issue.commands {
-        let config_field = config
-            .issue_fields
-            .iter()
-            .find(|issue_field| issue_field.name == name);
-        for value in values {
-            match config_field {
-                None => {
-                    set_in_body(&mut body, &name, value)?;
+        apply_command(config, &mut body, &name, values)
+            .with_context(|| format!("Failed to apply command {:?}", name))?;
+    }
+
+    Ok(Value::Object(body))
+}
+
+fn apply_command(
+    config: &Config,
+    body: &mut Map<String, Value>,
+    name: &str,
+    values: Vec<String>,
+) -> Result<()> {
+    enum CommandTranslator<'a> {
+        UnknownField,
+        SimpleValue {
+            api_field: &'a str,
+        },
+        ValueBag {
+            api_field: &'a str,
+            bag_name: &'a str,
+            value_bag: &'a BTreeMap<String, String>,
+        },
+    }
+
+    let issue_field = config
+        .issue_fields
+        .iter()
+        .find(|issue_field| issue_field.name == name);
+
+    let command_translator = match issue_field {
+        None => CommandTranslator::UnknownField,
+        Some(issue_field) => match &issue_field.values {
+            IssueFieldValuesConfig::Simple { .. } => CommandTranslator::SimpleValue {
+                api_field: &issue_field.api_field,
+            },
+            IssueFieldValuesConfig::FromBag { values_from } => {
+                let value_bag = config
+                    .value_bag
+                    .get(values_from)
+                    .with_context(|| format!("Value bag {:?} not found", values_from))?;
+
+                CommandTranslator::ValueBag {
+                    api_field: &issue_field.api_field,
+                    bag_name: values_from,
+                    value_bag,
                 }
-                Some(config_field) => {
-                    // TODO: translate values when used from bags
-                    let value = match config_field.values {
-                        IssueFieldValuesConfig::Simple { .. } => {}
-                        IssueFieldValuesConfig::FromBag { values_from } => {}
-                    };
-                    set_in_body(&mut body, &config_field.api_field, value)?;
-                }
+            }
+        },
+    };
+
+    for value in values {
+        match command_translator {
+            CommandTranslator::UnknownField => {
+                set_in_body(body, name, value)?;
+            }
+            CommandTranslator::SimpleValue { api_field } => {
+                set_in_body(body, api_field, value)?;
+            }
+            CommandTranslator::ValueBag {
+                api_field,
+                bag_name,
+                value_bag,
+            } => {
+                let translated_value = value_bag.get(&value).cloned().unwrap_or_else(|| {
+                    tracing::info!("Value {:?} not found in value bag {:?}", value, bag_name);
+                    value
+                });
+                set_in_body(body, api_field, translated_value)?;
             }
         }
     }
 
-    Ok(Value::Object(body))
+    Ok(())
 }
 
 fn set_in_body(body: &mut Map<String, Value>, field: &str, value: String) -> Result<()> {
@@ -222,14 +280,14 @@ fn set_in_body(body: &mut Map<String, Value>, field: &str, value: String) -> Res
                     .entry(part)
                     .or_insert_with(|| Value::Object(Map::new()))
                     .as_object_mut()
-                    .with_context(|| format!("Expected object when setting {}", field))?;
+                    .with_context(|| format!("Expected object when setting {:?}", field))?;
             }
             Some(part) => {
                 let array = scope
                     .entry(part)
                     .or_insert_with(|| Value::Array(Vec::new()))
                     .as_array_mut()
-                    .with_context(|| format!("Expected array when setting {}", field))?;
+                    .with_context(|| format!("Expected array when setting {:?}", field))?;
                 array.push(Value::Object(Map::new()));
                 scope = array
                     .last_mut()
@@ -243,7 +301,11 @@ fn set_in_body(body: &mut Map<String, Value>, field: &str, value: String) -> Res
     // Set leaf value
     match last_part.strip_suffix("[]") {
         None => {
-            ensure!(!scope.contains_key(last_part));
+            ensure!(
+                !scope.contains_key(last_part),
+                "Cannot set field multiple times: {:?}",
+                field
+            );
             scope.insert(last_part.to_owned(), Value::String(value));
         }
         Some(part) => {
@@ -251,7 +313,7 @@ fn set_in_body(body: &mut Map<String, Value>, field: &str, value: String) -> Res
                 .entry(part)
                 .or_insert_with(|| Value::Array(Vec::new()))
                 .as_array_mut()
-                .with_context(|| format!("Expected array when setting {}", field))?;
+                .with_context(|| format!("Expected array when setting {:?}", field))?;
             array.push(Value::String(value));
         }
     }
