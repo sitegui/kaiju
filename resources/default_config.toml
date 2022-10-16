@@ -12,6 +12,10 @@ email = ""
 # Create a new API token in https://id.atlassian.com/manage-profile/security/api-tokens and paste it
 # here
 token = ""
+# Which port to use for the local server
+server_port = 8080
+# Which ip to bind to for the local server
+server_ip = "127.0.0.1"
 
 # Declare some well-known issue fields, that can be easily created.
 # What follows is just an example, you should adapt it to your specific Jira installation

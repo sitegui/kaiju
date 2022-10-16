@@ -12,6 +12,8 @@ pub struct Config {
     pub api_host: String,
     pub email: String,
     pub token: String,
+    pub server_port: u16,
+    pub server_ip: String,
     pub issue_fields: Vec<IssueFieldConfig>,
     pub value_bag: BTreeMap<String, BTreeMap<String, String>>,
     pub board: BTreeMap<String, BoardConfig>,

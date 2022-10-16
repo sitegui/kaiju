@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
+use std::time::Instant;
 use tokio::sync::Mutex;
 
 #[derive(Debug)]
@@ -184,6 +185,7 @@ impl Board {
             fields: Value,
         }
 
+        let start = Instant::now();
         tracing::info!("Will request Jira for issues in column {}", column.name);
         let response: Response = self
             .api
@@ -193,6 +195,7 @@ impl Board {
             )
             .await?;
 
+        tracing::info!("Finished column {} in {:?}", column.name, start.elapsed());
         tracing::debug!("Got {:?}", response);
 
         let issues = future::try_join_all(
@@ -319,17 +322,20 @@ impl Board {
             "blue" => Some("#2684FF"),
             "green" => Some("#57D9A3"),
             "teal" => Some("#00C7E6"),
-            "yellow selected" => Some("#FFC400"),
+            "yellow" => Some("#FFC400"),
             "orange" => Some("#FF7452"),
             "grey" => Some("#6B778C"),
-            "dark purple" => Some("#5243AA"),
-            "dark blue" => Some("#0052CC"),
-            "dark green" => Some("#00875A"),
-            "dark teal" => Some("#00A3BF"),
-            "dark yellow" => Some("#FF991F"),
-            "dark orange" => Some("#DE350B"),
-            "dark grey" => Some("#253858"),
-            _ => None,
+            "dark_purple" => Some("#5243AA"),
+            "dark_blue" => Some("#0052CC"),
+            "dark_green" => Some("#00875A"),
+            "dark_teal" => Some("#00A3BF"),
+            "dark_yellow" => Some("#FF991F"),
+            "dark_orange" => Some("#DE350B"),
+            "dark_grey" => Some("#253858"),
+            _ => {
+                tracing::warn!("Could not translate color '{}'", color_name);
+                None
+            }
         }
     }
 }
