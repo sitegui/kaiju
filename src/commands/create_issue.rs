@@ -11,7 +11,7 @@ use serde_json::{Map, Value};
 use crate::config::{Config, IssueFieldValuesConfig};
 use crate::jira_api::JiraApi;
 
-pub fn create_issue(project_dirs: &ProjectDirs) -> Result<()> {
+pub async fn create_issue(project_dirs: &ProjectDirs) -> Result<()> {
     let config: Config = Config::new(project_dirs)?;
 
     let template = template(&config)?;
@@ -49,7 +49,7 @@ pub fn create_issue(project_dirs: &ProjectDirs) -> Result<()> {
 
     tracing::info!("Will request Jira API");
     let api = JiraApi::new(&config);
-    let response: Response = api.post("rest/api/2/issue", &api_body)?;
+    let response: Response = api.post("rest/api/2/issue", &api_body).await?;
 
     tracing::info!("Created issue: {}/browse/{}", config.api_host, response.key);
 

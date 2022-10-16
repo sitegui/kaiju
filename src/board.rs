@@ -1,12 +1,13 @@
 use crate::config::{BoardConfig, Config};
 use crate::jira_api::JiraApi;
 use anyhow::{Context, Result};
+use futures::future;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
+use tokio::sync::Mutex;
 
 #[derive(Debug)]
 pub struct Board {
@@ -14,7 +15,7 @@ pub struct Board {
     config: BoardConfig,
     name: String,
     columns: Vec<Column>,
-    epic_by_key: RefCell<BTreeMap<String, BoardEpicData>>,
+    epic_by_key: Mutex<BTreeMap<String, BoardEpicData>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -58,7 +59,7 @@ struct Column {
 }
 
 impl Board {
-    pub fn open(config: &Config, board_name: &str) -> Result<Self> {
+    pub async fn open(config: &Config, board_name: &str) -> Result<Self> {
         let board = config
             .board
             .get(board_name)
@@ -96,10 +97,12 @@ impl Board {
         }
 
         tracing::info!("Will request configuration from Jira");
-        let jira_data: Response = api.get(
-            &format!("rest/agile/1.0/board/{}/configuration", board.board_id),
-            &(),
-        )?;
+        let jira_data: Response = api
+            .get(
+                &format!("rest/agile/1.0/board/{}/configuration", board.board_id),
+                &(),
+            )
+            .await?;
 
         tracing::debug!("Got = {:?}", jira_data);
 
@@ -128,11 +131,11 @@ impl Board {
             config: board,
             name: jira_data.name,
             columns,
-            epic_by_key: RefCell::new(BTreeMap::new()),
+            epic_by_key: Mutex::new(BTreeMap::new()),
         })
     }
 
-    pub fn load(&self) -> Result<BoardData> {
+    pub async fn load(&self) -> Result<BoardData> {
         // Determine which fields are needed
         let mut request_fields = BTreeSet::new();
         request_fields.insert("status");
@@ -143,14 +146,15 @@ impl Board {
         }
         let fields = request_fields.into_iter().join(",");
 
-        // Load each column in sequence
+        // Load all columns
         let num_columns = self.columns.len();
-        let columns: Vec<_> = self
-            .columns
-            .iter()
-            .enumerate()
-            .map(|(i, column)| self.load_column(&fields, column, i == num_columns - 1))
-            .try_collect()?;
+        let columns = future::try_join_all(
+            self.columns
+                .iter()
+                .enumerate()
+                .map(|(i, column)| self.load_column(&fields, column, i == num_columns - 1)),
+        )
+        .await?;
 
         Ok(BoardData {
             name: self.name.clone(),
@@ -158,7 +162,12 @@ impl Board {
         })
     }
 
-    fn load_column(&self, fields: &str, column: &Column, is_last: bool) -> Result<BoardColumnData> {
+    async fn load_column(
+        &self,
+        fields: &str,
+        column: &Column,
+        is_last: bool,
+    ) -> Result<BoardColumnData> {
         let mut jql = format!("status in ({})", column.status_ids.iter().format(","));
         if let (true, Some(filter_resolved)) = (is_last, &self.config.filter_last_column_resolved) {
             write!(jql, " and resolved >= {:?}", filter_resolved)?;
@@ -176,18 +185,23 @@ impl Board {
         }
 
         tracing::info!("Will request Jira for issues in column {}", column.name);
-        let response: Response = self.api.get(
-            &format!("rest/agile/1.0/board/{}/issue", self.config.board_id),
-            &[("fields", fields), ("jql", &jql)],
-        )?;
+        let response: Response = self
+            .api
+            .get(
+                &format!("rest/agile/1.0/board/{}/issue", self.config.board_id),
+                &[("fields", fields), ("jql", &jql)],
+            )
+            .await?;
 
         tracing::debug!("Got {:?}", response);
 
-        let issues = response
-            .issues
-            .into_iter()
-            .map(|issue| self.load_issue(issue.key, issue.fields))
-            .try_collect()?;
+        let issues = future::try_join_all(
+            response
+                .issues
+                .into_iter()
+                .map(|issue| self.load_issue(issue.key, issue.fields)),
+        )
+        .await?;
 
         Ok(BoardColumnData {
             name: column.name.clone(),
@@ -195,7 +209,7 @@ impl Board {
         })
     }
 
-    fn load_issue(&self, key: String, fields: Value) -> Result<BoardIssueData> {
+    async fn load_issue(&self, key: String, fields: Value) -> Result<BoardIssueData> {
         #[derive(Debug, Deserialize)]
         #[serde(rename_all = "camelCase")]
         struct Avatar {
@@ -242,10 +256,10 @@ impl Board {
             }
         }
 
-        let epic = fields["parent"]["key"]
-            .as_str()
-            .map(|key| self.load_epic(key))
-            .transpose()?;
+        let epic = match fields["parent"]["key"].as_str() {
+            None => None,
+            Some(key) => Some(self.load_epic(key).await?),
+        };
 
         Ok(BoardIssueData {
             key,
@@ -256,8 +270,10 @@ impl Board {
         })
     }
 
-    fn load_epic(&self, key: &str) -> Result<BoardEpicData> {
-        if let Some(cached) = self.epic_by_key.borrow().get(key) {
+    async fn load_epic(&self, key: &str) -> Result<BoardEpicData> {
+        let mut epic_by_key = self.epic_by_key.lock().await;
+
+        if let Some(cached) = epic_by_key.get(key) {
             return Ok(cached.clone());
         }
 
@@ -266,7 +282,10 @@ impl Board {
             fields: BTreeMap<String, Value>,
         }
 
-        let response: Response = self.api.get(&format!("rest/api/2/issue/{}", key), &())?;
+        let response: Response = self
+            .api
+            .get(&format!("rest/api/2/issue/{}", key), &())
+            .await?;
         let short_name = response
             .fields
             .get(&self.config.epic_short_name)
@@ -280,7 +299,7 @@ impl Board {
             .epic_color
             .as_ref()
             .and_then(|field| response.fields.get(field).unwrap_or(&Value::Null).as_str())
-            .and_then(|color| Self::translate_color(color))
+            .and_then(Self::translate_color)
             .map(ToOwned::to_owned);
 
         let epic = BoardEpicData {
@@ -289,9 +308,7 @@ impl Board {
             color,
         };
 
-        self.epic_by_key
-            .borrow_mut()
-            .insert(key.to_owned(), epic.clone());
+        epic_by_key.insert(key.to_owned(), epic.clone());
 
         Ok(epic)
     }

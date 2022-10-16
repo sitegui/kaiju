@@ -4,6 +4,7 @@ mod commands;
 mod config;
 mod jira_api;
 
+use crate::commands::{create_issue, edit_config, open_board};
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use directories::ProjectDirs;
@@ -22,13 +23,14 @@ enum Command {
     /// Create a new issue
     CreateIssue,
     /// Open the Web interface
-    Open {
+    OpenBoard {
         /// The name of the board, as defined in the config file
         board_name: String,
     },
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     let project_dirs = ProjectDirs::from("", "sitegui", "kaiju")
@@ -37,8 +39,10 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     match args.command {
-        Command::EditConfig => commands::edit_config::edit_config(&project_dirs),
-        Command::CreateIssue => commands::create_issue::create_issue(&project_dirs),
-        Command::Open { board_name } => commands::open::open(&project_dirs, &board_name),
+        Command::EditConfig => edit_config::edit_config(&project_dirs),
+        Command::CreateIssue => create_issue::create_issue(&project_dirs).await,
+        Command::OpenBoard { board_name } => {
+            open_board::open_board(&project_dirs, &board_name).await
+        }
     }
 }

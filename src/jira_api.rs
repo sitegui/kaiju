@@ -1,6 +1,6 @@
 use crate::config::Config;
 use anyhow::Result;
-use reqwest::blocking::Client;
+use reqwest::Client;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
@@ -22,28 +22,32 @@ impl JiraApi {
         }
     }
 
-    pub fn post<T: DeserializeOwned>(&self, path: &str, body: &impl Serialize) -> Result<T> {
+    pub async fn post<T: DeserializeOwned>(&self, path: &str, body: &impl Serialize) -> Result<T> {
         let response = self
             .client
             .post(format!("{}/{}", self.api_host, path))
             .basic_auth(&self.email, Some(&self.token))
             .json(body)
-            .send()?
+            .send()
+            .await?
             .error_for_status()?
-            .json()?;
+            .json()
+            .await?;
 
         Ok(response)
     }
 
-    pub fn get<T: DeserializeOwned>(&self, path: &str, query: &impl Serialize) -> Result<T> {
+    pub async fn get<T: DeserializeOwned>(&self, path: &str, query: &impl Serialize) -> Result<T> {
         let response = self
             .client
             .get(format!("{}/{}", self.api_host, path))
             .query(query)
             .basic_auth(&self.email, Some(&self.token))
-            .send()?
+            .send()
+            .await?
             .error_for_status()?
-            .json()?;
+            .json()
+            .await?;
 
         Ok(response)
     }
