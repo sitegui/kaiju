@@ -35,10 +35,11 @@ impl JiraApi {
         Ok(response)
     }
 
-    pub fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
+    pub fn get<T: DeserializeOwned>(&self, path: &str, query: &impl Serialize) -> Result<T> {
         let response = self
             .client
             .get(format!("{}/{}", self.api_host, path))
+            .query(query)
             .basic_auth(&self.email, Some(&self.token))
             .send()?
             .error_for_status()?

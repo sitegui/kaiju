@@ -36,9 +36,11 @@ pub enum IssueFieldValuesConfig {
 #[derive(Debug, Clone, Deserialize)]
 pub struct BoardConfig {
     pub board_id: String,
-    pub card_summary: String,
     pub card_avatars: Vec<String>,
-    pub card_issue_links: Vec<String>,
+    pub show_first_column: bool,
+    pub filter_last_column_resolved: Option<String>,
+    pub epic_short_name: String,
+    pub epic_color: Option<String>,
 }
 
 const DEFAULT_CONFIG: &str = include_str!("../resources/default_config.toml");

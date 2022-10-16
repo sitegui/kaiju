@@ -70,3 +70,17 @@ Bob = "23446662"
 "Design" = "1"
 "Implement" = "11"
 "Review" = "111"
+
+[board.example]
+# The id of the board. It can be recovered from the URL
+board_id = "1337"
+# Which fields store information about users, which should be displayed as avatars
+card_avatars = ["assignee", "customfield_77"]
+# Whether to show of hide the first column, which is usually the backlog
+show_first_column = false
+# The filter (if any) to apply to the last column, which is usually the done column
+filter_last_column_resolved = "-7d"
+# The field (if any) from which to load the short name for the epics
+epic_short_name = "customfield_10009"
+# The field (if any) from which to load the color of the epic
+epic_color = "customfield_13624"
