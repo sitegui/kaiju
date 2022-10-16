@@ -5,11 +5,11 @@ use crate::ask_user_edit::ask_user_edit;
 use anyhow::{ensure, Context, Result};
 use directories::ProjectDirs;
 use itertools::Itertools;
-use reqwest::blocking::Client;
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
 use crate::config::{Config, IssueFieldValuesConfig};
+use crate::jira_api::JiraApi;
 
 pub fn create_issue(project_dirs: &ProjectDirs) -> Result<()> {
     let config: Config = Config::new(project_dirs)?;
@@ -48,13 +48,8 @@ pub fn create_issue(project_dirs: &ProjectDirs) -> Result<()> {
     }
 
     tracing::info!("Will request Jira API");
-    let response: Response = Client::new()
-        .post(format!("{}/rest/api/2/issue", config.api_host))
-        .basic_auth(config.email, Some(config.token))
-        .json(&api_body)
-        .send()?
-        .error_for_status()?
-        .json()?;
+    let api = JiraApi::new(&config);
+    let response: Response = api.post("rest/api/2/issue", &api_body)?;
 
     tracing::info!("Created issue: {}/browse/{}", config.api_host, response.key);
 

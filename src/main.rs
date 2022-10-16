@@ -1,6 +1,8 @@
 mod ask_user_edit;
+mod board;
 mod commands;
 mod config;
+mod jira_api;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
@@ -20,7 +22,10 @@ enum Command {
     /// Create a new issue
     CreateIssue,
     /// Open the Web interface
-    Open,
+    Open {
+        /// The name of the board, as defined in the config file
+        board_name: String,
+    },
 }
 
 fn main() -> Result<()> {
@@ -34,6 +39,6 @@ fn main() -> Result<()> {
     match args.command {
         Command::EditConfig => commands::edit_config::edit_config(&project_dirs),
         Command::CreateIssue => commands::create_issue::create_issue(&project_dirs),
-        Command::Open => commands::open::open(),
+        Command::Open { board_name } => commands::open::open(&project_dirs, &board_name),
     }
 }

@@ -14,6 +14,7 @@ pub struct Config {
     pub token: String,
     pub issue_fields: Vec<IssueFieldConfig>,
     pub value_bag: BTreeMap<String, BTreeMap<String, String>>,
+    pub board: BTreeMap<String, BoardConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -30,6 +31,14 @@ pub struct IssueFieldConfig {
 pub enum IssueFieldValuesConfig {
     Simple { values: Vec<String> },
     FromBag { values_from: String },
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BoardConfig {
+    pub board_id: String,
+    pub card_summary: String,
+    pub card_avatars: Vec<String>,
+    pub card_issue_links: Vec<String>,
 }
 
 const DEFAULT_CONFIG: &str = include_str!("../resources/default_config.toml");
