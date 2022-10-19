@@ -13,6 +13,7 @@ use tokio::sync::Mutex;
 #[derive(Debug)]
 pub struct Board {
     api: JiraApi,
+    api_host: String,
     config: BoardConfig,
     name: String,
     columns: Vec<Column>,
@@ -34,6 +35,7 @@ pub struct BoardColumnData {
 #[derive(Debug, Clone, Serialize)]
 pub struct BoardIssueData {
     key: String,
+    jira_link: String,
     summary: String,
     status: String,
     avatars: Vec<BoardAvatarData>,
@@ -49,6 +51,7 @@ pub struct BoardAvatarData {
 #[derive(Debug, Clone, Serialize)]
 pub struct BoardEpicData {
     key: String,
+    jira_link: String,
     short_name: String,
     color: Option<String>,
 }
@@ -129,6 +132,7 @@ impl Board {
 
         Ok(Board {
             api,
+            api_host: config.api_host.clone(),
             config: board,
             name: jira_data.name,
             columns,
@@ -265,6 +269,7 @@ impl Board {
         };
 
         Ok(BoardIssueData {
+            jira_link: format!("{}/browse/{}", self.api_host, key),
             key,
             summary,
             status,
@@ -307,6 +312,7 @@ impl Board {
 
         let epic = BoardEpicData {
             key: key.to_owned(),
+            jira_link: format!("{}/browse/{}", self.api_host, key),
             short_name,
             color,
         };

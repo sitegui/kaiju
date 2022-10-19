@@ -1,0 +1,23 @@
+.board-issue {
+    margin: 3px 0;
+    border-radius: 0;
+}
+
+.issue-key {
+
+}
+
+.issue-epic:hover {
+    color: white;
+}
+
+.issue-summary {
+    font-size: 1.1em;
+}
+
+.avatar {
+    width: 24px;
+    height: 24px;
+    border-radius: 100%;
+    margin: 2px;
+}

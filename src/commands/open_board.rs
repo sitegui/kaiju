@@ -30,6 +30,13 @@ async fn get_css() -> impl IntoResponse {
     )
 }
 
+async fn get_favicon() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "image/png")],
+        include_bytes!("../../resources/web/favicon.png").as_slice(),
+    )
+}
+
 async fn get_api_board(Extension(board): Extension<Arc<Board>>) -> impl IntoResponse {
     match board.load().await {
         Ok(data) => Ok(Json(data)),
@@ -50,6 +57,7 @@ pub async fn open_board(project_dirs: &ProjectDirs, board_name: &str) -> Result<
         .route("/", get(get_root))
         .route("/index.js", get(get_js))
         .route("/index.css", get(get_css))
+        .route("/favicon.png", get(get_favicon))
         .route("/api/board", get(get_api_board))
         .layer(Extension(board));
     let ip: IpAddr = config.server_ip.parse()?;
