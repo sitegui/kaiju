@@ -1,37 +1,40 @@
 use crate::board::Board;
 use crate::config::Config;
-use actix_web::{get, web, App, HttpResponse, HttpServer, Responder};
 use anyhow::Result;
+use axum::http::{header, StatusCode};
+use axum::response::IntoResponse;
+use axum::routing::get;
+use axum::{Extension, Json, Router, Server};
 use directories::ProjectDirs;
-use std::error::Error as StdError;
+use std::net::IpAddr;
 use std::sync::Arc;
 
-#[get("/")]
-async fn get_root() -> impl Responder {
-    HttpResponse::Ok()
-        .content_type("text/html")
-        .body(include_str!("../../resources/web/index.html"))
+async fn get_root() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "text/html")],
+        include_str!("../../resources/web/index.html"),
+    )
 }
 
-#[get("/index.js")]
-async fn get_js() -> impl Responder {
-    HttpResponse::Ok()
-        .content_type("text/javascript")
-        .body(include_str!("../../resources/web/index.js"))
+async fn get_js() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "text/javascript")],
+        include_str!("../../resources/web/index.js"),
+    )
 }
 
-#[get("/index.css")]
-async fn get_css() -> impl Responder {
-    HttpResponse::Ok()
-        .content_type("text/css")
-        .body(include_str!("../../resources/web/index.css"))
+async fn get_css() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "text/css")],
+        include_str!("../../resources/web/index.css"),
+    )
 }
 
-#[get("/api/board")]
-async fn get_api_board(board: web::Data<Arc<Board>>) -> Result<impl Responder, Box<dyn StdError>> {
-    let data = board.load().await?;
-
-    Ok(web::Json(data))
+async fn get_api_board(Extension(board): Extension<Arc<Board>>) -> impl IntoResponse {
+    match board.load().await {
+        Ok(data) => Ok(Json(data)),
+        Err(error) => Err((StatusCode::INTERNAL_SERVER_ERROR, error.to_string())),
+    }
 }
 
 pub async fn open_board(project_dirs: &ProjectDirs, board_name: &str) -> Result<()> {
@@ -43,15 +46,16 @@ pub async fn open_board(project_dirs: &ProjectDirs, board_name: &str) -> Result<
         "Will start local server on http://localhost:{}",
         config.server_port
     );
-    HttpServer::new(move || {
-        App::new()
-            .app_data(web::Data::new(board.clone()))
-            .service(get_api_board)
-            .service(get_root)
-    })
-    .bind((config.server_ip.as_str(), config.server_port))?
-    .run()
-    .await?;
+    let app = Router::new()
+        .route("/", get(get_root))
+        .route("/index.js", get(get_js))
+        .route("/index.css", get(get_css))
+        .route("/api/board", get(get_api_board))
+        .layer(Extension(board));
+    let ip: IpAddr = config.server_ip.parse()?;
+    Server::bind(&(ip, config.server_port).into())
+        .serve(app.into_make_service())
+        .await?;
 
     Ok(())
 }
