@@ -1,23 +1,44 @@
+body {
+    padding-top: 60px;
+}
+
 .board-issue {
     margin: 3px 0;
     border-radius: 0;
+    background-color: #f7f7f7;
+    cursor: pointer;
 }
 
 .issue-key {
 
 }
 
+.issue-epic {
+    cursor: pointer;
+}
+
 .issue-epic:hover {
-    color: white;
+    text-decoration: underline;
 }
 
 .issue-summary {
     font-size: 1.1em;
 }
 
-.avatar {
+.avatar-small {
     width: 24px;
     height: 24px;
     border-radius: 100%;
     margin: 2px;
+}
+
+.avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 100%;
+    margin: 4px;
+}
+
+.issue-description {
+    white-space: pre-wrap;
 }

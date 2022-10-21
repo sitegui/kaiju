@@ -43,6 +43,7 @@ pub struct BoardIssueData {
     key: String,
     jira_link: String,
     summary: String,
+    description: Option<String>,
     status: String,
     avatars: Vec<BoardAvatarData>,
     epic: Option<BoardEpicData>,
@@ -121,6 +122,12 @@ impl Board {
             name: jira_config.name,
             columns,
         })
+    }
+
+    pub async fn issue(&self, key: &str) -> Result<BoardIssueData> {
+        let data = self.api.issue(key).await?;
+
+        self.load_issue(data.key, data.fields).await
     }
 
     async fn jira_config(&self) -> Result<BoardJiraConfig> {
@@ -228,6 +235,8 @@ impl Board {
             .context("Could not extract summary field")?
             .to_owned();
 
+        let description = fields["description"].as_str().map(ToOwned::to_owned);
+
         let status = fields["status"]["name"]
             .as_str()
             .context("Could not extract status field")?
@@ -265,6 +274,7 @@ impl Board {
             jira_link: format!("{}/browse/{}", self.api_host, key),
             key,
             summary,
+            description,
             status,
             avatars: avatars.into_iter().collect(),
             epic,

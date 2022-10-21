@@ -26,7 +26,12 @@ const appComponent = Vue.createApp({
             lastUpdate: new Date,
             name: null,
             columns: [],
+            detailedIssueKey: null,
+            detailedIssue: null,
         }
+    },
+    mounted() {
+        this.issueDetailModal = new bootstrap.Modal('#issue-detail-modal', {})
     },
     methods: {
         ...Utils,
@@ -46,6 +51,19 @@ const appComponent = Vue.createApp({
                 this.loading = false
             }
         },
+        openIssue(key) {
+            this.issueDetailModal.show()
+            this.detailedIssueKey = key
+            this.detailedIssue = null
+
+            fetch(`/api/issue/${key}`)
+                .then(response => response.json())
+                .then(response => {
+                    if (response.key === this.detailedIssueKey) {
+                        this.detailedIssue = response
+                    }
+                })
+        }
     }
 })
 
@@ -90,7 +108,7 @@ appComponent.component('board-column', {
 })
 
 appComponent.component('board-issue', {
-    props: ['issueKey', 'jiraLink', 'summary', 'status', 'avatars', 'epic'],
+    props: ['issueKey', 'summary', 'status', 'avatars', 'epic'],
     template: '#board-issue',
 })
 

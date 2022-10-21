@@ -1,13 +1,15 @@
-use crate::board::Board;
+use crate::board::{Board, BoardData, BoardIssueData};
 use crate::config::Config;
-use anyhow::Result;
-use axum::http::{header, StatusCode};
-use axum::response::IntoResponse;
+use anyhow::{Error, Result};
+use axum::extract::Path;
+use axum::http::{header, HeaderValue, Method, StatusCode};
+use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Extension, Json, Router, Server};
 use directories::ProjectDirs;
 use std::net::IpAddr;
 use std::sync::Arc;
+use tower_http::cors::{AllowOrigin, CorsLayer};
 
 async fn get_root() -> impl IntoResponse {
     (
@@ -37,11 +39,33 @@ async fn get_favicon() -> impl IntoResponse {
     )
 }
 
-async fn get_api_board(Extension(board): Extension<Arc<Board>>) -> impl IntoResponse {
-    match board.load().await {
-        Ok(data) => Ok(Json(data)),
-        Err(error) => Err((StatusCode::INTERNAL_SERVER_ERROR, error.to_string())),
+struct ApiError(Error);
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        (StatusCode::INTERNAL_SERVER_ERROR, format!("{:?}", self.0)).into_response()
     }
+}
+
+impl From<Error> for ApiError {
+    fn from(error: Error) -> Self {
+        ApiError(error)
+    }
+}
+
+async fn get_api_board(
+    Extension(board): Extension<Arc<Board>>,
+) -> Result<Json<BoardData>, ApiError> {
+    let data = board.load().await?;
+    Ok(Json(data))
+}
+
+async fn get_api_issue(
+    Extension(board): Extension<Arc<Board>>,
+    Path(key): Path<String>,
+) -> Result<Json<BoardIssueData>, ApiError> {
+    let data = board.issue(&key).await?;
+    Ok(Json(data))
 }
 
 pub async fn open_board(project_dirs: &ProjectDirs, board_name: &str) -> Result<()> {
@@ -59,7 +83,18 @@ pub async fn open_board(project_dirs: &ProjectDirs, board_name: &str) -> Result<
         .route("/index.css", get(get_css))
         .route("/favicon.png", get(get_favicon))
         .route("/api/board", get(get_api_board))
-        .layer(Extension(board));
+        .route("/api/issue/:key", get(get_api_issue))
+        .layer(Extension(board))
+        .layer(
+            CorsLayer::new()
+                .allow_origin(AllowOrigin::predicate(|origin: &HeaderValue, _| {
+                    origin
+                        .to_str()
+                        .map(|origin| origin.starts_with("http://localhost:"))
+                        .unwrap_or(false)
+                }))
+                .allow_methods([Method::GET]),
+        );
     let ip: IpAddr = config.server_ip.parse()?;
     Server::bind(&(ip, config.server_port).into())
         .serve(app.into_make_service())

@@ -8,6 +8,9 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png">
     <title>Kaiju board</title>
 
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"
+            integrity="sha256-/xUj+3OJU5yExlq6GSYGSHk7tPXikynS7ogEvDej/m4=" crossorigin="anonymous"></script>
+
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/css/bootstrap.min.css"
           integrity="sha256-IUOUHAPazai08QFs7W4MbzTlwEWFo7z/4zw8YmxEiko=" crossorigin="anonymous">
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/js/bootstrap.bundle.min.js"
@@ -25,19 +28,18 @@
 
 <template id="board-issue">
     <div class="card board-issue">
-        <div class="card-body">
+        <div class="card-body" @click="$emit('openIssue', issueKey)">
             <h3 class="card-title issue-summary">{{summary}}</h3>
-            <p class="card-title issue-key" :title="status">
-                <a :href="jiraLink" target="_blank" class="text-muted">{{issueKey}}</a>
+            <p class="card-text" v-if="epic">
+                <span class="badge badge-primary issue-epic" :style="{backgroundColor: epic.color}"
+                      :title="epic.key" @click.stop="$emit('openIssue', epic.key)">
+                    {{epic.short_name}}
+                </span>
             </p>
             <p class="card-text text-end">
-                <img v-for="avatar in avatars" :key="avatar.name" class="avatar" :src="avatar.image"
+                <img v-for="avatar in avatars" :key="avatar.name" class="avatar-small" :src="avatar.image"
                      :title="avatar.name">
-            </p>
-            <p class="card-text" v-if="epic">
-                <a class="badge badge-primary issue-epic" :style="{backgroundColor: epic.color}" :href="epic.jira_link" target="_blank" :title="epic.key">
-                    {{epic.short_name}}
-                </a>
+                <span class="text-muted issue-key m-1 float-start small" :title="status">{{issueKey}}</span>
             </p>
         </div>
     </div>
@@ -49,17 +51,55 @@
 
         <board-issue v-for="issue in issues" :key="issue.key" :issue-key="issue.key" :summary="issue.summary"
                      :status="issue.status" :avatars="issue.avatars" :epic="issue.epic"
-                     :jira-link="issue.jira_link"></board-issue>
+                     @open-issue="(key) => $emit('openIssue', key)"
+        ></board-issue>
     </div>
 </template>
 
 <template id="relative-date"><span>{{text}}</span></template>
 
 <template id="app">
+    <div class="modal fade" id="issue-detail-modal" tabindex="-1" aria-labelledby="issue-detail-modal-label"
+         aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h1 class="modal-title fs-5" id="issue-detail-modal-label">Issue {{detailedIssueKey}}</h1>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+
+                <div class="modal-body" v-if="detailedIssue">
+                    <h3>{{detailedIssue.summary}}</h3>
+                    <p><a :href="detailedIssue.jira_link" target="_blank">View in Jira</a></p>
+
+                    <p><strong>Status</strong>: {{detailedIssue.status}}</p>
+
+                    <p class="issue-description">{{detailedIssue.description}}</p>
+
+                    <p v-if="detailedIssue.epic">
+                        <strong>Epic</strong>: <span class="badge badge-primary issue-epic" :style="{backgroundColor: detailedIssue.epic.color}"
+                              :title="detailedIssue.epic.key" @click="openIssue(detailedIssue.epic.key)">
+                            {{detailedIssue.epic.short_name}}
+                        </span>
+                    </p>
+
+                    <p>
+                        <strong>Users</strong>: <img v-for="avatar in detailedIssue.avatars" :key="avatar.name" class="avatar" :src="avatar.image"
+                             :title="avatar.name">
+                    </p>
+                </div>
+                <div class="modal-body d-flex align-items-center p-3" v-else>
+                    <strong>Loading...</strong>
+                    <div class="spinner-border m-3"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="container-fluid p-2">
         <nav class="navbar navbar-expand-lg navbar-dark bg-primary fixed-top">
             <div class="container-fluid">
-                <span class="navbar-brand">Kaiju</span>
+                <span class="navbar-brand">Kaiju - {{ name }}</span>
                 <div class="collapse navbar-collapse" id="navbarText">
                 <span class="navbar-text ms-auto">
                         Last update <relative-date :date="lastUpdate"></relative-date>
@@ -68,15 +108,14 @@
             </div>
         </nav>
 
-        <div v-if="!loaded" class="d-flex align-items-center p-3 mt-5">
+        <div v-if="!loaded" class="d-flex align-items-center p-3">
             <strong>Loading...</strong>
             <div class="spinner-border m-3"></div>
         </div>
         <div v-else>
-            <h1>{{ name }}</h1>
             <div class="row">
                 <board-column v-for="column in columns" :key="column.name" :name="column.name"
-                              :issues="column.issues"></board-column>
+                              :issues="column.issues" @open-issue="openIssue"></board-column>
             </div>
         </div>
     </div>
