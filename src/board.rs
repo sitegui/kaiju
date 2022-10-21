@@ -1,4 +1,4 @@
-use crate::config::{BoardConfig, Config};
+use crate::config::{BoardLocalConfig, Config};
 use crate::jira_api::JiraApi;
 use anyhow::{Context, Result};
 use futures::future;
@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
+use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::Mutex;
 
@@ -14,10 +15,15 @@ use tokio::sync::Mutex;
 pub struct Board {
     api: JiraApi,
     api_host: String,
-    config: BoardConfig,
-    name: String,
+    local_config: BoardLocalConfig,
+    jira_config: Mutex<Option<BoardJiraConfig>>,
+    epic_by_key: Mutex<BTreeMap<String, Arc<Mutex<Option<BoardEpicData>>>>>,
+}
+
+#[derive(Debug, Clone)]
+struct BoardJiraConfig {
     columns: Vec<Column>,
-    epic_by_key: Mutex<BTreeMap<String, BoardEpicData>>,
+    name: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -56,7 +62,7 @@ pub struct BoardEpicData {
     color: Option<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Column {
     name: String,
     status_ids: Vec<String>,
@@ -75,14 +81,67 @@ impl Board {
                 )
             })?
             .clone();
+
         let api = JiraApi::new(config);
 
-        tracing::info!("Will request configuration from Jira");
-        let jira_data = api.board_configuration(&board.board_id).await?;
+        Ok(Board {
+            api,
+            api_host: config.api_host.clone(),
+            local_config: board,
+            jira_config: Mutex::new(None),
+            epic_by_key: Mutex::new(BTreeMap::new()),
+        })
+    }
 
+    pub async fn load(&self) -> Result<BoardData> {
+        // Determine which fields are needed
+        let mut request_fields = BTreeSet::new();
+        request_fields.insert("status");
+        request_fields.insert("summary");
+        request_fields.insert("parent");
+        for card_avatar in &self.local_config.card_avatars {
+            request_fields.insert(card_avatar);
+        }
+        let fields = request_fields.into_iter().join(",");
+
+        let jira_config = self.jira_config().await?;
+
+        // Load all columns
+        let num_columns = jira_config.columns.len();
+        let columns = future::try_join_all(
+            jira_config
+                .columns
+                .into_iter()
+                .enumerate()
+                .map(|(i, column)| self.load_column(&fields, column, i == num_columns - 1)),
+        )
+        .await?;
+
+        Ok(BoardData {
+            name: jira_config.name,
+            columns,
+        })
+    }
+
+    async fn jira_config(&self) -> Result<BoardJiraConfig> {
+        let mut cached = self.jira_config.lock().await;
+
+        if let Some(config) = cached.as_ref() {
+            return Ok(config.clone());
+        }
+
+        tracing::info!("Will request configuration from Jira");
+        let jira_data = self
+            .api
+            .board_configuration(&self.local_config.board_id)
+            .await?;
         tracing::debug!("Got = {:?}", jira_data);
 
-        let num_skip = if board.show_first_column { 0 } else { 1 };
+        let num_skip = if self.local_config.show_first_column {
+            0
+        } else {
+            1
+        };
         let columns = jira_data
             .column_config
             .columns
@@ -100,53 +159,28 @@ impl Board {
                     status_ids: statuses,
                 }
             })
-            .collect();
+            .collect_vec();
 
-        Ok(Board {
-            api,
-            api_host: config.api_host.clone(),
-            config: board,
+        let jira_config = BoardJiraConfig {
+            columns,
             name: jira_data.name,
-            columns,
-            epic_by_key: Mutex::new(BTreeMap::new()),
-        })
-    }
+        };
 
-    pub async fn load(&self) -> Result<BoardData> {
-        // Determine which fields are needed
-        let mut request_fields = BTreeSet::new();
-        request_fields.insert("status");
-        request_fields.insert("summary");
-        request_fields.insert("parent");
-        for card_avatar in &self.config.card_avatars {
-            request_fields.insert(card_avatar);
-        }
-        let fields = request_fields.into_iter().join(",");
+        *cached = Some(jira_config.clone());
 
-        // Load all columns
-        let num_columns = self.columns.len();
-        let columns = future::try_join_all(
-            self.columns
-                .iter()
-                .enumerate()
-                .map(|(i, column)| self.load_column(&fields, column, i == num_columns - 1)),
-        )
-        .await?;
-
-        Ok(BoardData {
-            name: self.name.clone(),
-            columns,
-        })
+        Ok(jira_config)
     }
 
     async fn load_column(
         &self,
         fields: &str,
-        column: &Column,
+        column: Column,
         is_last: bool,
     ) -> Result<BoardColumnData> {
         let mut jql = format!("status in ({})", column.status_ids.iter().format(","));
-        if let (true, Some(filter_resolved)) = (is_last, &self.config.filter_last_column_resolved) {
+        if let (true, Some(filter_resolved)) =
+            (is_last, &self.local_config.filter_last_column_resolved)
+        {
             write!(jql, " and resolved >= {:?}", filter_resolved)?;
         }
 
@@ -154,10 +188,9 @@ impl Board {
         tracing::info!("Will request Jira for issues in column {}", column.name);
         let response = self
             .api
-            .board_issues(&self.config.board_id, fields, &jql)
+            .board_issues(&self.local_config.board_id, fields, &jql)
             .await?;
 
-        tracing::info!("Finished column {} in {:?}", column.name, start.elapsed());
         tracing::debug!("Got {:?}", response);
 
         let issues = future::try_join_all(
@@ -168,8 +201,10 @@ impl Board {
         )
         .await?;
 
+        tracing::info!("Finished column {} in {:?}", column.name, start.elapsed());
+
         Ok(BoardColumnData {
-            name: column.name.clone(),
+            name: column.name,
             issues,
         })
     }
@@ -199,7 +234,7 @@ impl Board {
             .to_owned();
 
         let mut avatars = BTreeSet::new();
-        for card_avatar in &self.config.card_avatars {
+        for card_avatar in &self.local_config.card_avatars {
             if let Some(value) = fields.get(card_avatar) {
                 if value.is_null() {
                     continue;
@@ -223,7 +258,7 @@ impl Board {
 
         let epic = match fields["parent"]["key"].as_str() {
             None => None,
-            Some(key) => Some(self.load_epic(key).await?),
+            Some(key) => Some(self.load_epic(key.to_string()).await?),
         };
 
         Ok(BoardIssueData {
@@ -236,24 +271,35 @@ impl Board {
         })
     }
 
-    async fn load_epic(&self, key: &str) -> Result<BoardEpicData> {
+    async fn epic_cache(&self, key: String) -> Arc<Mutex<Option<BoardEpicData>>> {
         let mut epic_by_key = self.epic_by_key.lock().await;
 
-        if let Some(cached) = epic_by_key.get(key) {
-            return Ok(cached.clone());
+        let epic_cache = epic_by_key
+            .entry(key)
+            .or_insert_with(|| Arc::new(Mutex::new(None)));
+
+        epic_cache.clone()
+    }
+
+    async fn load_epic(&self, key: String) -> Result<BoardEpicData> {
+        let epic_cache = self.epic_cache(key.clone()).await;
+        let mut cached = epic_cache.lock().await;
+
+        if let Some(epic) = cached.as_ref() {
+            return Ok(epic.clone());
         }
 
-        let response = self.api.issue(key).await?;
+        let response = self.api.issue(&key).await?;
         let short_name = response
             .fields
-            .get(&self.config.epic_short_name)
+            .get(&self.local_config.epic_short_name)
             .unwrap_or(&Value::Null)
             .as_str()
             .context("Could not extract short name for epic issue")?
             .to_owned();
 
         let color = self
-            .config
+            .local_config
             .epic_color
             .as_ref()
             .and_then(|field| response.fields.get(field).unwrap_or(&Value::Null).as_str())
@@ -267,7 +313,7 @@ impl Board {
             color,
         };
 
-        epic_by_key.insert(key.to_owned(), epic.clone());
+        *cached = Some(epic.clone());
 
         Ok(epic)
     }

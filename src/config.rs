@@ -16,7 +16,7 @@ pub struct Config {
     pub server_ip: String,
     pub issue_fields: Vec<IssueFieldConfig>,
     pub value_bag: BTreeMap<String, BTreeMap<String, String>>,
-    pub board: BTreeMap<String, BoardConfig>,
+    pub board: BTreeMap<String, BoardLocalConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -36,7 +36,7 @@ pub enum IssueFieldValuesConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct BoardConfig {
+pub struct BoardLocalConfig {
     pub board_id: String,
     pub card_avatars: Vec<String>,
     pub show_first_column: bool,
