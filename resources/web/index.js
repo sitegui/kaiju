@@ -31,7 +31,12 @@ const appComponent = Vue.createApp({
         }
     },
     mounted() {
-        this.issueDetailModal = new bootstrap.Modal('#issue-detail-modal', {})
+        const modalEl = document.getElementById('issue-detail-modal')
+        this.issueDetailModal = new bootstrap.Modal(modalEl, {})
+        modalEl.addEventListener('hide.bs.modal', () => {
+            this.detailedIssueKey = null
+            this.detailedIssue = null
+        })
     },
     methods: {
         ...Utils,
@@ -45,6 +50,11 @@ const appComponent = Vue.createApp({
                 const response = await (await fetch('/api/board')).json()
                 this.name = response.name
                 this.columns = response.columns
+
+                if (this.detailedIssueKey !== null) {
+                    await this.updateDetailedIssue()
+                }
+
                 this.loaded = true
                 this.lastUpdate = new Date
             } finally {
@@ -55,14 +65,14 @@ const appComponent = Vue.createApp({
             this.issueDetailModal.show()
             this.detailedIssueKey = key
             this.detailedIssue = null
+            this.updateDetailedIssue().catch(console.error)
+        },
+        async updateDetailedIssue() {
+            const response = await (await fetch(`/api/issue/${this.detailedIssueKey}`)).json()
 
-            fetch(`/api/issue/${key}`)
-                .then(response => response.json())
-                .then(response => {
-                    if (response.key === this.detailedIssueKey) {
-                        this.detailedIssue = response
-                    }
-                })
+            if (response.key === this.detailedIssueKey) {
+                this.detailedIssue = response
+            }
         }
     }
 })
@@ -114,21 +124,24 @@ appComponent.component('board-issue', {
 
 const app = appComponent.mount('#main')
 
-async function sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms))
-}
+let nextUpdateTimer = null
 
-async function mainLoop() {
-    while (true) {
-        try {
-            await app.update()
-        } catch (error) {
-            console.error(error)
-        }
-
-        const is_visible = document.visibilityState !== 'hidden'
-        await sleep(is_visible ? 10e3 : 90e3)
+function updateAndLoop() {
+    if (app.loading) {
+        return
     }
+
+    clearTimeout(nextUpdateTimer)
+    app.update().catch(error => console.error(error)).finally(() => {
+        const sleepTime = document.visibilityState === 'visible' ? 10e3 : 90e3
+        nextUpdateTimer = setTimeout(updateAndLoop, sleepTime)
+    })
 }
 
-mainLoop()
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+        updateAndLoop()
+    }
+})
+
+updateAndLoop()
