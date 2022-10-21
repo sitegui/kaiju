@@ -77,36 +77,8 @@ impl Board {
             .clone();
         let api = JiraApi::new(config);
 
-        #[derive(Debug, Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct Response {
-            name: String,
-            column_config: ResponseColumnsConfig,
-        }
-
-        #[derive(Debug, Deserialize)]
-        struct ResponseColumnsConfig {
-            columns: Vec<ResponseColumnConfig>,
-        }
-
-        #[derive(Debug, Deserialize)]
-        struct ResponseColumnConfig {
-            name: String,
-            statuses: Vec<ResponseColumnStatus>,
-        }
-
-        #[derive(Debug, Deserialize)]
-        struct ResponseColumnStatus {
-            id: String,
-        }
-
         tracing::info!("Will request configuration from Jira");
-        let jira_data: Response = api
-            .get(
-                &format!("rest/agile/1.0/board/{}/configuration", board.board_id),
-                &(),
-            )
-            .await?;
+        let jira_data = api.board_configuration(&board.board_id).await?;
 
         tracing::debug!("Got = {:?}", jira_data);
 
@@ -178,25 +150,11 @@ impl Board {
             write!(jql, " and resolved >= {:?}", filter_resolved)?;
         }
 
-        #[derive(Debug, Deserialize)]
-        struct Response {
-            issues: Vec<ResponseIssue>,
-        }
-
-        #[derive(Debug, Deserialize)]
-        struct ResponseIssue {
-            key: String,
-            fields: Value,
-        }
-
         let start = Instant::now();
         tracing::info!("Will request Jira for issues in column {}", column.name);
-        let response: Response = self
+        let response = self
             .api
-            .get(
-                &format!("rest/agile/1.0/board/{}/issue", self.config.board_id),
-                &[("fields", fields), ("jql", &jql)],
-            )
+            .board_issues(&self.config.board_id, fields, &jql)
             .await?;
 
         tracing::info!("Finished column {} in {:?}", column.name, start.elapsed());
@@ -285,15 +243,7 @@ impl Board {
             return Ok(cached.clone());
         }
 
-        #[derive(Debug, Deserialize)]
-        struct Response {
-            fields: BTreeMap<String, Value>,
-        }
-
-        let response: Response = self
-            .api
-            .get(&format!("rest/api/2/issue/{}", key), &())
-            .await?;
+        let response = self.api.issue(key).await?;
         let short_name = response
             .fields
             .get(&self.config.epic_short_name)

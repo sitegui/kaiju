@@ -5,7 +5,6 @@ use crate::ask_user_edit::ask_user_edit;
 use anyhow::{ensure, Context, Result};
 use directories::ProjectDirs;
 use itertools::Itertools;
-use serde::Deserialize;
 use serde_json::{Map, Value};
 
 use crate::config::{Config, IssueFieldValuesConfig};
@@ -42,14 +41,9 @@ pub async fn create_issue(project_dirs: &ProjectDirs) -> Result<()> {
         }
     };
 
-    #[derive(Debug, Deserialize)]
-    struct Response {
-        key: String,
-    }
-
     tracing::info!("Will request Jira API");
     let api = JiraApi::new(&config);
-    let response: Response = api.post("rest/api/2/issue", &api_body).await?;
+    let response = api.create_issue(&api_body).await?;
 
     tracing::info!("Created issue: {}/browse/{}", config.api_host, response.key);
 
