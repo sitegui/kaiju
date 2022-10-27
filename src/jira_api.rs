@@ -47,6 +47,26 @@ pub struct Issue {
     pub fields: Value,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DevelopmentInfo {
+    pub branches: Vec<Branch>,
+    pub pull_requests: Vec<PullRequest>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Branch {
+    pub name: String,
+    pub url: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct PullRequest {
+    pub name: String,
+    pub status: String,
+    pub url: String,
+}
+
 impl JiraApi {
     pub fn new(config: &Config) -> Self {
         JiraApi {
@@ -57,16 +77,25 @@ impl JiraApi {
         }
     }
 
-    pub async fn create_issue(&self, issue: &Value) -> Result<Issue> {
-        self.post("rest/api/2/issue", issue).await
+    pub async fn create_issue(&self, issue: &Value) -> Result<String> {
+        #[derive(Debug, Deserialize)]
+        struct Response {
+            key: String,
+        }
+
+        let response: Response = self.post("rest/api/2/issue", issue).await?;
+
+        Ok(response.key)
     }
 
     pub async fn board_configuration(&self, id: &str) -> Result<BoardConfiguration> {
+        tracing::info!("Load board configuration for {}", id);
         self.get(&format!("rest/agile/1.0/board/{}/configuration", id), &())
             .await
     }
 
     pub async fn board_issues(&self, id: &str, fields: &str, jql: &str) -> Result<BoardIssues> {
+        tracing::info!("Load board issues for {}", id);
         self.get(
             &format!("rest/agile/1.0/board/{}/issue", id),
             &[("fields", fields), ("jql", jql)],
@@ -75,7 +104,40 @@ impl JiraApi {
     }
 
     pub async fn issue(&self, key: &str) -> Result<Issue> {
+        tracing::info!("Load issue {}", key);
         self.get(&format!("rest/api/2/issue/{}", key), &()).await
+    }
+
+    pub async fn development_info(&self, issue_id: &str) -> Result<DevelopmentInfo> {
+        tracing::info!("Load development info for {}", issue_id);
+
+        #[derive(Debug, Deserialize)]
+        struct Response {
+            detail: Vec<DevelopmentInfo>,
+        }
+
+        let response: Response = self
+            .get(
+                "rest/dev-status/latest/issue/detail",
+                &[
+                    ("issueId", issue_id),
+                    ("applicationType", "githube"),
+                    ("dataType", "pullrequest"),
+                ],
+            )
+            .await?;
+
+        let mut branches = vec![];
+        let mut pull_requests = vec![];
+        for detail in response.detail {
+            branches.extend(detail.branches);
+            pull_requests.extend(detail.pull_requests);
+        }
+
+        Ok(DevelopmentInfo {
+            branches,
+            pull_requests,
+        })
     }
 
     async fn post<T: DeserializeOwned>(&self, path: &str, body: &impl Serialize) -> Result<T> {

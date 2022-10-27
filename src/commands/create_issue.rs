@@ -43,9 +43,9 @@ pub async fn create_issue(project_dirs: &ProjectDirs) -> Result<()> {
 
     tracing::info!("Will request Jira API");
     let api = JiraApi::new(&config);
-    let response = api.create_issue(&api_body).await?;
+    let key = api.create_issue(&api_body).await?;
 
-    tracing::info!("Created issue: {}/browse/{}", config.api_host, response.key);
+    tracing::info!("Created issue: {}/browse/{}", config.api_host, key);
 
     Ok(())
 }

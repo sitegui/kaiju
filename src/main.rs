@@ -3,6 +3,7 @@ mod board;
 mod commands;
 mod config;
 mod jira_api;
+mod local_jira_cache;
 
 use crate::commands::{create_issue, edit_config, open_board};
 use anyhow::{Context, Result};

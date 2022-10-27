@@ -1,23 +1,19 @@
 use crate::config::{BoardLocalConfig, Config};
 use crate::jira_api::JiraApi;
+use crate::local_jira_cache::LocalJiraCache;
 use anyhow::{Context, Result};
 use futures::future;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::fmt::Write;
-use std::sync::Arc;
-use std::time::Instant;
-use tokio::sync::Mutex;
 
 #[derive(Debug)]
 pub struct Board {
-    api: JiraApi,
+    cached_api: LocalJiraCache,
     api_host: String,
     local_config: BoardLocalConfig,
-    jira_config: Mutex<Option<BoardJiraConfig>>,
-    epic_by_key: Mutex<BTreeMap<String, Arc<Mutex<Option<BoardEpicData>>>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -86,11 +82,9 @@ impl Board {
         let api = JiraApi::new(config);
 
         Ok(Board {
-            api,
+            cached_api: LocalJiraCache::new(api),
             api_host: config.api_host.clone(),
             local_config: board,
-            jira_config: Mutex::new(None),
-            epic_by_key: Mutex::new(BTreeMap::new()),
         })
     }
 
@@ -125,30 +119,23 @@ impl Board {
     }
 
     pub async fn issue(&self, key: &str) -> Result<BoardIssueData> {
-        let data = self.api.issue(key).await?;
+        let data = self.cached_api.issue(key).await?;
 
         self.load_issue(data.key, data.fields).await
     }
 
     async fn jira_config(&self) -> Result<BoardJiraConfig> {
-        let mut cached = self.jira_config.lock().await;
-
-        if let Some(config) = cached.as_ref() {
-            return Ok(config.clone());
-        }
-
-        tracing::info!("Will request configuration from Jira");
         let jira_data = self
-            .api
+            .cached_api
             .board_configuration(&self.local_config.board_id)
             .await?;
-        tracing::debug!("Got = {:?}", jira_data);
 
         let num_skip = if self.local_config.show_first_column {
             0
         } else {
             1
         };
+
         let columns = jira_data
             .column_config
             .columns
@@ -168,14 +155,10 @@ impl Board {
             })
             .collect_vec();
 
-        let jira_config = BoardJiraConfig {
+        Ok(BoardJiraConfig {
             columns,
             name: jira_data.name,
-        };
-
-        *cached = Some(jira_config.clone());
-
-        Ok(jira_config)
+        })
     }
 
     async fn load_column(
@@ -191,14 +174,10 @@ impl Board {
             write!(jql, " and resolved >= {:?}", filter_resolved)?;
         }
 
-        let start = Instant::now();
-        tracing::info!("Will request Jira for issues in column {}", column.name);
         let response = self
-            .api
+            .cached_api
             .board_issues(&self.local_config.board_id, fields, &jql)
             .await?;
-
-        tracing::debug!("Got {:?}", response);
 
         let issues = future::try_join_all(
             response
@@ -207,8 +186,6 @@ impl Board {
                 .map(|issue| self.load_issue(issue.key, issue.fields)),
         )
         .await?;
-
-        tracing::info!("Finished column {} in {:?}", column.name, start.elapsed());
 
         Ok(BoardColumnData {
             name: column.name,
@@ -281,25 +258,9 @@ impl Board {
         })
     }
 
-    async fn epic_cache(&self, key: String) -> Arc<Mutex<Option<BoardEpicData>>> {
-        let mut epic_by_key = self.epic_by_key.lock().await;
-
-        let epic_cache = epic_by_key
-            .entry(key)
-            .or_insert_with(|| Arc::new(Mutex::new(None)));
-
-        epic_cache.clone()
-    }
-
     async fn load_epic(&self, key: String) -> Result<BoardEpicData> {
-        let epic_cache = self.epic_cache(key.clone()).await;
-        let mut cached = epic_cache.lock().await;
+        let response = self.cached_api.epic(&key).await?;
 
-        if let Some(epic) = cached.as_ref() {
-            return Ok(epic.clone());
-        }
-
-        let response = self.api.issue(&key).await?;
         let short_name = response
             .fields
             .get(&self.local_config.epic_short_name)
@@ -322,8 +283,6 @@ impl Board {
             short_name,
             color,
         };
-
-        *cached = Some(epic.clone());
 
         Ok(epic)
     }
