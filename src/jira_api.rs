@@ -4,6 +4,7 @@ use reqwest::Client;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::time::Duration;
 
 #[derive(Debug)]
 pub struct JiraApi {
@@ -43,6 +44,7 @@ pub struct BoardIssues {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Issue {
+    pub id: String,
     pub key: String,
     pub fields: Value,
 }
@@ -70,7 +72,10 @@ pub struct PullRequest {
 impl JiraApi {
     pub fn new(config: &Config) -> Self {
         JiraApi {
-            client: Client::new(),
+            client: Client::builder()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .unwrap(),
             api_host: config.api_host.clone(),
             email: config.email.clone(),
             token: config.token.clone(),

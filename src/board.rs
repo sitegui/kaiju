@@ -43,6 +43,8 @@ pub struct BoardIssueData {
     status: String,
     avatars: Vec<BoardAvatarData>,
     epic: Option<BoardEpicData>,
+    branches: Vec<BoardBranch>,
+    pull_requests: Vec<BoardPullRequest>,
 }
 
 #[derive(Debug, Clone, Serialize, Ord, PartialOrd, Eq, PartialEq)]
@@ -57,6 +59,19 @@ pub struct BoardEpicData {
     jira_link: String,
     short_name: String,
     color: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct BoardBranch {
+    name: String,
+    url: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct BoardPullRequest {
+    name: String,
+    status: String,
+    url: String,
 }
 
 #[derive(Debug, Clone)]
@@ -121,7 +136,7 @@ impl Board {
     pub async fn issue(&self, key: &str) -> Result<BoardIssueData> {
         let data = self.cached_api.issue(key).await?;
 
-        self.load_issue(data.key, data.fields).await
+        self.load_issue(data.id, data.key, data.fields).await
     }
 
     async fn jira_config(&self) -> Result<BoardJiraConfig> {
@@ -183,7 +198,7 @@ impl Board {
             response
                 .issues
                 .into_iter()
-                .map(|issue| self.load_issue(issue.key, issue.fields)),
+                .map(|issue| self.load_issue(issue.id, issue.key, issue.fields)),
         )
         .await?;
 
@@ -193,7 +208,7 @@ impl Board {
         })
     }
 
-    async fn load_issue(&self, key: String, fields: Value) -> Result<BoardIssueData> {
+    async fn load_issue(&self, id: String, key: String, fields: Value) -> Result<BoardIssueData> {
         #[derive(Debug, Deserialize)]
         #[serde(rename_all = "camelCase")]
         struct Avatar {
@@ -247,6 +262,8 @@ impl Board {
             Some(key) => Some(self.load_epic(key.to_string()).await?),
         };
 
+        let (branches, pull_requests) = self.load_development_info(&id).await;
+
         Ok(BoardIssueData {
             jira_link: format!("{}/browse/{}", self.api_host, key),
             key,
@@ -255,7 +272,41 @@ impl Board {
             status,
             avatars: avatars.into_iter().collect(),
             epic,
+            branches,
+            pull_requests,
         })
+    }
+
+    async fn load_development_info(
+        &self,
+        issue_id: &str,
+    ) -> (Vec<BoardBranch>, Vec<BoardPullRequest>) {
+        match self.cached_api.development_info(issue_id).await {
+            Ok(info) => {
+                let branches = info
+                    .branches
+                    .into_iter()
+                    .map(|branch| BoardBranch {
+                        name: branch.name,
+                        url: branch.url,
+                    })
+                    .collect_vec();
+                let pull_requests = info
+                    .pull_requests
+                    .into_iter()
+                    .map(|pull_request| BoardPullRequest {
+                        name: pull_request.name,
+                        status: pull_request.status,
+                        url: pull_request.url,
+                    })
+                    .collect_vec();
+                (branches, pull_requests)
+            }
+            Err(error) => {
+                tracing::warn!("Failed to load development info: {}", error);
+                (vec![], vec![])
+            }
+        }
     }
 
     async fn load_epic(&self, key: String) -> Result<BoardEpicData> {

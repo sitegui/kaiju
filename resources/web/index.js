@@ -118,8 +118,11 @@ appComponent.component('board-column', {
 })
 
 appComponent.component('board-issue', {
-    props: ['issueKey', 'summary', 'status', 'avatars', 'epic'],
+    props: ['issueKey', 'summary', 'status', 'avatars', 'epic', 'branches', 'pullRequests'],
     template: '#board-issue',
+    methods: {
+        ...Utils,
+    }
 })
 
 const app = appComponent.mount('#main')

@@ -41,6 +41,14 @@
                      :title="avatar.name">
                 <span class="text-muted issue-key m-1 float-start small" :title="status">{{issueKey}}</span>
             </p>
+            <p class="card-text small">
+                <span v-if="pullRequests.length > 1">{{pullRequests.length}} MRs</span>
+                <a v-else-if="pullRequests.length == 1" :href="pullRequests[0].url" :title="pullRequests[0].name"
+                   target="_blank">{{pullRequests[0].status}}
+                    MR</a>
+                <span v-else-if="branches.length > 1">{{branches.length}} branches</span>
+                <a v-else-if="branches.length == 1" :href="branches[0].url" :title="branches[0].name" target="_blank">branch</a>
+            </p>
         </div>
     </div>
 </template>
@@ -50,7 +58,8 @@
         <h2>{{name}}</h2>
 
         <board-issue v-for="issue in issues" :key="issue.key" :issue-key="issue.key" :summary="issue.summary"
-                     :status="issue.status" :avatars="issue.avatars" :epic="issue.epic"
+                     :status="issue.status" :avatars="issue.avatars" :epic="issue.epic" :branches="issue.branches"
+                     :pull-requests="issue.pull_requests"
                      @open-issue="(key) => $emit('openIssue', key)"
         ></board-issue>
     </div>
@@ -77,15 +86,18 @@
                     <p class="issue-description">{{detailedIssue.description}}</p>
 
                     <p v-if="detailedIssue.epic">
-                        <strong>Epic</strong>: <span class="badge badge-primary issue-epic" :style="{backgroundColor: detailedIssue.epic.color}"
-                              :title="detailedIssue.epic.key" @click="openIssue(detailedIssue.epic.key)">
+                        <strong>Epic</strong>: <span class="badge badge-primary issue-epic"
+                                                     :style="{backgroundColor: detailedIssue.epic.color}"
+                                                     :title="detailedIssue.epic.key"
+                                                     @click="openIssue(detailedIssue.epic.key)">
                             {{detailedIssue.epic.short_name}}
                         </span>
                     </p>
 
                     <p>
-                        <strong>Users</strong>: <img v-for="avatar in detailedIssue.avatars" :key="avatar.name" class="avatar" :src="avatar.image"
-                             :title="avatar.name">
+                        <strong>Users</strong>: <img v-for="avatar in detailedIssue.avatars" :key="avatar.name"
+                                                     class="avatar" :src="avatar.image"
+                                                     :title="avatar.name">
                     </p>
                 </div>
                 <div class="modal-body d-flex align-items-center p-3" v-else>
