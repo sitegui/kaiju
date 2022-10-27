@@ -14,7 +14,7 @@ categories = ["command-line-utilities", "development-tools"]
 [dependencies]
 anyhow = { version = "1.0.65", features = ["backtrace"] }
 axum = "0.5.16"
-clap = { version = "4.0.15", features = ["derive"] }
+clap = { version = "4.0.18", features = ["derive"] }
 directories = "4.0.1"
 futures = "0.3.24"
 itertools = "0.10.5"
