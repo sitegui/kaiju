@@ -10,6 +10,8 @@ use serde::Deserialize;
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
     pub api_host: String,
+    pub api_parallelism: usize,
+    pub api_timeout_seconds: u64,
     pub email: String,
     pub token: String,
     pub server_port: u16,
@@ -17,6 +19,7 @@ pub struct Config {
     pub issue_fields: Vec<IssueFieldConfig>,
     pub value_bag: BTreeMap<String, BTreeMap<String, String>>,
     pub board: BTreeMap<String, BoardLocalConfig>,
+    pub cache: CacheConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -43,6 +46,15 @@ pub struct BoardLocalConfig {
     pub filter_last_column_resolved: Option<String>,
     pub epic_short_name: String,
     pub epic_color: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CacheConfig {
+    pub ttl_board_configuration_seconds: u64,
+    pub ttl_board_issues_seconds: u64,
+    pub ttl_issue_seconds: u64,
+    pub ttl_epic_seconds: u64,
+    pub ttl_development_info_seconds: u64,
 }
 
 const DEFAULT_CONFIG: &str = include_str!("../resources/default_config.toml");

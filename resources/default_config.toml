@@ -13,9 +13,12 @@ email = ""
 # here
 token = ""
 # Which port to use for the local server
-server_port = 8080
+server_port = 8017
 # Which ip to bind to for the local server
 server_ip = "127.0.0.1"
+# How many requests can be made in parallel to the Jira API
+api_parallelism = 10
+api_timeout_seconds = 5
 
 # Declare some well-known issue fields, that can be easily created.
 # What follows is just an example, you should adapt it to your specific Jira installation
@@ -88,3 +91,10 @@ filter_last_column_resolved = "-7d"
 epic_short_name = "customfield_10009"
 # The field (if any) from which to load the color of the epic
 epic_color = "customfield_13624"
+
+[cache]
+ttl_board_configuration_seconds = 3600
+ttl_board_issues_seconds = 10
+ttl_issue_seconds = 10
+ttl_epic_seconds = 60
+ttl_development_info_seconds = 60

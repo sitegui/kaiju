@@ -16,8 +16,11 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/js/bootstrap.bundle.min.js"
             integrity="sha256-xLI5SjD6DkojxrMIVBNT4ghypv12Xtj7cOa0AgKd6wA=" crossorigin="anonymous"></script>
 
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.9.1/font/bootstrap-icons.css"
-          integrity="sha256-8M+b2Hj+vy/2J5tZ9pYDHeuPD59KsaEZn1XXj3xVhjg=" crossorigin="anonymous">
+    <link rel="stylesheet"
+          href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.2.0/css/fontawesome.min.css"
+          integrity="sha256-hjq1Cjn8IDyo9hTO8UxsxwDuZL/qzUFCbc6e+MvZhQk=" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.2.0/css/solid.min.css"
+          integrity="sha256-el0hjI5A3DO5oMJ7ScKl0MlpbqU+5jcYgtNIoxEWrps=" crossorigin="anonymous">
 
     <script src="https://cdn.jsdelivr.net/npm/vue@3.2.41/dist/vue.global.prod.js"
             integrity="sha256-kgmHr8X3NCK+tP7+Mlnaxylp5JoAt1tcOAfa6WvELRg=" crossorigin="anonymous"></script>
@@ -41,13 +44,15 @@
                      :title="avatar.name">
                 <span class="text-muted issue-key m-1 float-start small" :title="status">{{issueKey}}</span>
             </p>
-            <p class="card-text small">
-                <span v-if="pullRequests.length > 1">{{pullRequests.length}} MRs</span>
-                <a v-else-if="pullRequests.length == 1" :href="pullRequests[0].url" :title="pullRequests[0].name"
-                   target="_blank">{{pullRequests[0].status}}
-                    MR</a>
-                <span v-else-if="branches.length > 1">{{branches.length}} branches</span>
-                <a v-else-if="branches.length == 1" :href="branches[0].url" :title="branches[0].name" target="_blank">branch</a>
+            <p class="card-text small issue-development-info" v-if="branches.length || mergeRequests.length">
+                <span v-if="mergeRequests.length > 1">{{mergeRequests.length}} x <i
+                        class="fa-regular fa-code-pull-request"></i></span>
+                <a v-else-if="mergeRequests.length == 1" :href="mergeRequests[0].url" :title="mergeRequests[0].name"
+                   target="_blank" @click.stop>{{mergeRequests[0].status}}
+                    <i class="fa-regular fa-code-pull-request"></i></a>
+                <span v-else-if="branches.length > 1">{{branches.length}} x <i
+                        class="fa-regular fa-code-branch"></i></span>
+                <span v-else-if="branches.length == 1" :title="branches[0].name"><i class="fa-regular fa-code-branch"></i></span>
             </p>
         </div>
     </div>
@@ -59,7 +64,7 @@
 
         <board-issue v-for="issue in issues" :key="issue.key" :issue-key="issue.key" :summary="issue.summary"
                      :status="issue.status" :avatars="issue.avatars" :epic="issue.epic" :branches="issue.branches"
-                     :pull-requests="issue.pull_requests"
+                     :merge-requests="issue.merge_requests"
                      @open-issue="(key) => $emit('openIssue', key)"
         ></board-issue>
     </div>
@@ -99,6 +104,22 @@
                                                      class="avatar" :src="avatar.image"
                                                      :title="avatar.name">
                     </p>
+
+                    <div v-if="detailedIssue.branches.length">
+                        <p><strong>Branches</strong>:</p>
+                        <ul>
+                            <li v-for="branch in detailedIssue.branches" :key="branch.name">{{branch.name}}</li>
+                        </ul>
+                    </div>
+
+                    <div v-if="detailedIssue.merge_requests.length">
+                        <p><strong>Merge requests</strong>:</p>
+                        <ul>
+                            <li v-for="merge_request in detailedIssue.merge_requests" :key="merge_request.name">
+                                <a :href="merge_request.url" target="_blank">{{merge_request.status}} - {{merge_request.name}}</a>
+                            </li>
+                        </ul>
+                    </div>
                 </div>
                 <div class="modal-body d-flex align-items-center p-3" v-else>
                     <strong>Loading...</strong>

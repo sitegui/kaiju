@@ -1,3 +1,6 @@
+const apiHost = ''
+// const apiHost = 'http://localhost:8017'
+
 const Utils = {
     plural(n, singular, plural) {
         const noun = n === 1 ? singular : plural
@@ -47,7 +50,7 @@ const appComponent = Vue.createApp({
 
             this.loading = true
             try {
-                const response = await (await fetch('/api/board')).json()
+                const response = await (await fetch(`${apiHost}/api/board`)).json()
                 this.name = response.name
                 this.columns = response.columns
 
@@ -68,7 +71,7 @@ const appComponent = Vue.createApp({
             this.updateDetailedIssue().catch(console.error)
         },
         async updateDetailedIssue() {
-            const response = await (await fetch(`/api/issue/${this.detailedIssueKey}`)).json()
+            const response = await (await fetch(`${apiHost}/api/issue/${this.detailedIssueKey}`)).json()
 
             if (response.key === this.detailedIssueKey) {
                 this.detailedIssue = response
@@ -118,7 +121,7 @@ appComponent.component('board-column', {
 })
 
 appComponent.component('board-issue', {
-    props: ['issueKey', 'summary', 'status', 'avatars', 'epic', 'branches', 'pullRequests'],
+    props: ['issueKey', 'summary', 'status', 'avatars', 'epic', 'branches', 'mergeRequests'],
     template: '#board-issue',
     methods: {
         ...Utils,

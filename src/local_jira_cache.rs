@@ -1,3 +1,4 @@
+use crate::config::CacheConfig;
 use crate::jira_api::{BoardConfiguration, BoardIssues, DevelopmentInfo, Issue, JiraApi};
 use anyhow::{anyhow, Context, Result};
 use parking_lot::Mutex;
@@ -5,15 +6,19 @@ use std::any::Any;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::future::Future;
-use std::mem;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::Notify;
+use tokio::sync::{Notify, Semaphore};
 
 #[derive(Debug)]
-pub struct LocalJiraCache {
-    api: JiraApi,
+pub struct LocalJiraCache(Arc<LocalJiraCacheInner>);
+
+#[derive(Debug)]
+struct LocalJiraCacheInner {
+    api: Arc<JiraApi>,
     data: Mutex<HashMap<CacheKey, CacheEntry>>,
+    semaphore: Semaphore,
+    config: CacheConfig,
 }
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
@@ -34,11 +39,8 @@ enum CacheKey {
     },
 }
 
-#[derive(Debug, Clone)]
-struct CacheEntry(Arc<Mutex<CacheEntryInner>>);
-
 #[derive(Debug)]
-enum CacheEntryInner {
+enum CacheEntry {
     Loading(Arc<Notify>),
     Loaded(CachedBox),
 }
@@ -51,70 +53,79 @@ struct CachedBox {
 
 #[derive(Debug)]
 enum CacheEntryState<T> {
+    Miss,
     Loading(Arc<Notify>),
-    Dead,
-    Loaded(Result<T>),
+    Hit(Result<T>),
 }
 
 impl LocalJiraCache {
-    pub fn new(api: JiraApi) -> Self {
-        LocalJiraCache {
-            api,
+    pub fn new(api: JiraApi, parallelism: usize, config: CacheConfig) -> Self {
+        let inner = LocalJiraCacheInner {
+            api: Arc::new(api),
+            semaphore: Semaphore::new(parallelism),
             data: Default::default(),
-        }
+            config,
+        };
+
+        LocalJiraCache(Arc::new(inner))
     }
 
-    pub async fn board_configuration(&self, id: &str) -> Result<BoardConfiguration> {
+    pub async fn board_configuration(&self, id: String) -> Result<BoardConfiguration> {
         self.get(
-            CacheKey::BoardConfiguration { id: id.to_owned() },
-            Duration::from_secs(3600),
-            || self.api.board_configuration(id),
+            CacheKey::BoardConfiguration { id: id.clone() },
+            Duration::from_secs(self.0.config.ttl_board_configuration_seconds),
+            |api| async move { api.board_configuration(&id).await },
         )
         .await
     }
 
-    pub async fn board_issues(&self, id: &str, fields: &str, jql: &str) -> Result<BoardIssues> {
+    pub async fn board_issues(
+        &self,
+        id: String,
+        fields: String,
+        jql: String,
+    ) -> Result<BoardIssues> {
         self.get(
             CacheKey::BoardIssues {
                 id: id.to_owned(),
                 fields: fields.to_owned(),
                 jql: jql.to_owned(),
             },
-            Duration::from_secs(10),
-            || self.api.board_issues(id, fields, jql),
+            Duration::from_secs(self.0.config.ttl_board_issues_seconds),
+            |api| async move { api.board_issues(&id, &fields, &jql).await },
         )
         .await
     }
 
-    pub async fn issue(&self, key: &str) -> Result<Issue> {
+    pub async fn issue(&self, key: String) -> Result<Issue> {
         self.get(
             CacheKey::Issue {
                 key: key.to_owned(),
             },
-            Duration::from_secs(10),
-            || self.api.issue(key),
+            Duration::from_secs(self.0.config.ttl_issue_seconds),
+            |api| async move { api.issue(&key).await },
         )
         .await
     }
 
-    pub async fn epic(&self, key: &str) -> Result<Issue> {
+    pub async fn epic(&self, key: String) -> Result<Issue> {
         self.get(
             CacheKey::Issue {
                 key: key.to_owned(),
             },
-            Duration::from_secs(60),
-            || self.api.issue(key),
+            Duration::from_secs(self.0.config.ttl_epic_seconds),
+            |api| async move { api.issue(&key).await },
         )
         .await
     }
 
-    pub async fn development_info(&self, issue_id: &str) -> Result<DevelopmentInfo> {
+    pub async fn development_info(&self, issue_id: String) -> Result<DevelopmentInfo> {
         self.get(
             CacheKey::DevelopmentInfo {
                 issue_id: issue_id.to_owned(),
             },
-            Duration::from_secs(60),
-            || self.api.development_info(issue_id),
+            Duration::from_secs(self.0.config.ttl_development_info_seconds),
+            |api| async move { api.development_info(&issue_id).await },
         )
         .await
     }
@@ -122,80 +133,64 @@ impl LocalJiraCache {
     async fn get<T, G, F>(&self, key: CacheKey, time_to_live: Duration, generate: G) -> Result<T>
     where
         T: Clone + Send + Sync + 'static,
-        G: FnOnce() -> F,
-        F: Future<Output = Result<T>>,
+        G: Send + 'static + FnOnce(Arc<JiraApi>) -> F,
+        F: Send + Future<Output = Result<T>>,
     {
-        let (was_vacant, entry) = self.cache_entry(key);
+        loop {
+            match self.cache_entry_state::<T>(key.clone()) {
+                CacheEntryState::Miss => {
+                    let inner = self.0.clone();
+                    let task = tokio::spawn(async move {
+                        let permit = inner.semaphore.acquire().await.unwrap();
+                        let value = generate(inner.api.clone()).await;
+                        drop(permit);
 
-        if was_vacant {
-            entry.settle(time_to_live, generate().await)
-        } else {
-            loop {
-                match entry.state() {
-                    CacheEntryState::Loading(notify) => {
-                        notify.notified().await;
-                        notify.notify_one();
-                    }
-                    CacheEntryState::Dead => {
-                        return entry.settle(time_to_live, generate().await);
-                    }
-                    CacheEntryState::Loaded(value) => {
-                        return value;
-                    }
+                        let boxed_value = CachedBox::new(time_to_live, value);
+                        let value = boxed_value.get();
+
+                        let old_entry = inner
+                            .data
+                            .lock()
+                            .insert(key, CacheEntry::Loaded(boxed_value));
+                        if let Some(CacheEntry::Loading(notify)) = old_entry {
+                            notify.notify_waiters();
+                            notify.notify_one();
+                        }
+
+                        value
+                    });
+
+                    return task.await.unwrap();
                 }
+                CacheEntryState::Loading(notify) => {
+                    notify.notified().await;
+                    notify.notify_one();
+                }
+                CacheEntryState::Hit(value) => return value,
             }
         }
     }
 
-    fn cache_entry(&self, key: CacheKey) -> (bool, CacheEntry) {
-        let mut data = self.data.lock();
+    fn cache_entry_state<T: Clone + 'static>(&self, key: CacheKey) -> CacheEntryState<T> {
+        let mut data = self.0.data.lock();
         match data.entry(key) {
             Entry::Vacant(vacant) => {
-                let entry = CacheEntry::loading();
-                vacant.insert(entry.clone());
-                (true, entry)
+                let notify = Arc::new(Notify::new());
+                vacant.insert(CacheEntry::Loading(notify));
+                CacheEntryState::Miss
             }
-            Entry::Occupied(occupied) => (false, occupied.get().clone()),
-        }
-    }
-}
-
-impl CacheEntry {
-    fn loading() -> Self {
-        let inner = CacheEntryInner::Loading(Arc::new(Notify::new()));
-        CacheEntry(Arc::new(Mutex::new(inner)))
-    }
-
-    fn settle<T: Send + Sync + Clone + 'static>(
-        &self,
-        time_to_live: Duration,
-        cached: Result<T>,
-    ) -> Result<T> {
-        let cached_box = CachedBox::new(time_to_live, cached);
-        let cached = cached_box.get();
-        let new_inner = CacheEntryInner::Loaded(cached_box);
-        let old_inner = mem::replace(&mut *self.0.lock(), new_inner);
-
-        if let CacheEntryInner::Loading(notify) = old_inner {
-            notify.notify_waiters();
-            notify.notify_one();
-        }
-
-        cached
-    }
-
-    fn state<T: Clone + Send + Sync + 'static>(&self) -> CacheEntryState<T> {
-        let mut inner = self.0.lock();
-        match &*inner {
-            CacheEntryInner::Loading(notify) => CacheEntryState::Loading(notify.clone()),
-            CacheEntryInner::Loaded(cached) => {
-                if cached.live_until < Instant::now() {
-                    *inner = CacheEntryInner::Loading(Arc::new(Notify::new()));
-                    CacheEntryState::Dead
-                } else {
-                    CacheEntryState::Loaded(cached.get())
+            Entry::Occupied(mut occupied) => match occupied.get() {
+                CacheEntry::Loading(notify) => CacheEntryState::Loading(notify.clone()),
+                CacheEntry::Loaded(cached) => {
+                    if cached.live_until < Instant::now() {
+                        let notify = Arc::new(Notify::new());
+                        occupied.insert(CacheEntry::Loading(notify));
+                        CacheEntryState::Miss
+                    } else {
+                        CacheEntryState::Hit(cached.get())
+                    }
                 }
-            }
+            },
         }
     }
 }

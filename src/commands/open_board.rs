@@ -1,6 +1,6 @@
 use crate::board::{Board, BoardData, BoardIssueData};
 use crate::config::Config;
-use anyhow::{Error, Result};
+use anyhow::{ensure, Context, Error, Result};
 use axum::extract::Path;
 use axum::http::{header, HeaderValue, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
@@ -8,7 +8,11 @@ use axum::routing::get;
 use axum::{Extension, Json, Router, Server};
 use directories::ProjectDirs;
 use std::net::IpAddr;
+use std::process::Command;
 use std::sync::Arc;
+use std::thread;
+use std::time::{Duration, Instant};
+use tokio::task;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 
 async fn get_root() -> impl IntoResponse {
@@ -56,7 +60,9 @@ impl From<Error> for ApiError {
 async fn get_api_board(
     Extension(board): Extension<Arc<Board>>,
 ) -> Result<Json<BoardData>, ApiError> {
+    let start = Instant::now();
     let data = board.load().await?;
+    tracing::info!("Got board data in {:.1}s", start.elapsed().as_secs_f64());
     Ok(Json(data))
 }
 
@@ -64,7 +70,7 @@ async fn get_api_issue(
     Extension(board): Extension<Arc<Board>>,
     Path(key): Path<String>,
 ) -> Result<Json<BoardIssueData>, ApiError> {
-    let data = board.issue(&key).await?;
+    let data = board.issue(key).await?;
     Ok(Json(data))
 }
 
@@ -73,9 +79,10 @@ pub async fn open_board(project_dirs: &ProjectDirs, board_name: &str) -> Result<
 
     let board = Arc::new(Board::open(&config, board_name).await?);
 
+    let server_port = config.server_port;
     tracing::info!(
         "Will start local server on http://localhost:{}",
-        config.server_port
+        server_port
     );
     let app = Router::new()
         .route("/", get(get_root))
@@ -96,9 +103,30 @@ pub async fn open_board(project_dirs: &ProjectDirs, board_name: &str) -> Result<
                 .allow_methods([Method::GET]),
         );
     let ip: IpAddr = config.server_ip.parse()?;
-    Server::bind(&(ip, config.server_port).into())
-        .serve(app.into_make_service())
-        .await?;
+    let server = Server::bind(&(ip, server_port).into()).serve(app.into_make_service());
+
+    task::spawn_blocking(move || {
+        let url = format!("http://localhost:{}", server_port);
+        match open_browser(&url) {
+            Err(error) => tracing::warn!("Failed to open browser: {}", error),
+            Ok(()) => tracing::info!("Opened default browser"),
+        }
+    });
+
+    server.await?;
+
+    Ok(())
+}
+
+fn open_browser(url: &str) -> Result<()> {
+    thread::sleep(Duration::from_secs(1));
+
+    let status = Command::new("xdg-open")
+        .arg(url)
+        .status()
+        .context("Failed to open in browser")?;
+
+    ensure!(status.success());
 
     Ok(())
 }

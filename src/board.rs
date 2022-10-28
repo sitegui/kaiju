@@ -44,7 +44,7 @@ pub struct BoardIssueData {
     avatars: Vec<BoardAvatarData>,
     epic: Option<BoardEpicData>,
     branches: Vec<BoardBranch>,
-    pull_requests: Vec<BoardPullRequest>,
+    merge_requests: Vec<BoardMergeRequest>,
 }
 
 #[derive(Debug, Clone, Serialize, Ord, PartialOrd, Eq, PartialEq)]
@@ -68,7 +68,7 @@ pub struct BoardBranch {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct BoardPullRequest {
+pub struct BoardMergeRequest {
     name: String,
     status: String,
     url: String,
@@ -97,7 +97,7 @@ impl Board {
         let api = JiraApi::new(config);
 
         Ok(Board {
-            cached_api: LocalJiraCache::new(api),
+            cached_api: LocalJiraCache::new(api, config.api_parallelism, config.cache.clone()),
             api_host: config.api_host.clone(),
             local_config: board,
         })
@@ -123,7 +123,7 @@ impl Board {
                 .columns
                 .into_iter()
                 .enumerate()
-                .map(|(i, column)| self.load_column(&fields, column, i == num_columns - 1)),
+                .map(|(i, column)| self.load_column(fields.clone(), column, i == num_columns - 1)),
         )
         .await?;
 
@@ -133,7 +133,7 @@ impl Board {
         })
     }
 
-    pub async fn issue(&self, key: &str) -> Result<BoardIssueData> {
+    pub async fn issue(&self, key: String) -> Result<BoardIssueData> {
         let data = self.cached_api.issue(key).await?;
 
         self.load_issue(data.id, data.key, data.fields).await
@@ -142,7 +142,7 @@ impl Board {
     async fn jira_config(&self) -> Result<BoardJiraConfig> {
         let jira_data = self
             .cached_api
-            .board_configuration(&self.local_config.board_id)
+            .board_configuration(self.local_config.board_id.clone())
             .await?;
 
         let num_skip = if self.local_config.show_first_column {
@@ -178,7 +178,7 @@ impl Board {
 
     async fn load_column(
         &self,
-        fields: &str,
+        fields: String,
         column: Column,
         is_last: bool,
     ) -> Result<BoardColumnData> {
@@ -191,7 +191,7 @@ impl Board {
 
         let response = self
             .cached_api
-            .board_issues(&self.local_config.board_id, fields, &jql)
+            .board_issues(self.local_config.board_id.clone(), fields, jql)
             .await?;
 
         let issues = future::try_join_all(
@@ -262,7 +262,7 @@ impl Board {
             Some(key) => Some(self.load_epic(key.to_string()).await?),
         };
 
-        let (branches, pull_requests) = self.load_development_info(&id).await;
+        let (branches, merge_requests) = self.load_development_info(id).await;
 
         Ok(BoardIssueData {
             jira_link: format!("{}/browse/{}", self.api_host, key),
@@ -273,14 +273,14 @@ impl Board {
             avatars: avatars.into_iter().collect(),
             epic,
             branches,
-            pull_requests,
+            merge_requests,
         })
     }
 
     async fn load_development_info(
         &self,
-        issue_id: &str,
-    ) -> (Vec<BoardBranch>, Vec<BoardPullRequest>) {
+        issue_id: String,
+    ) -> (Vec<BoardBranch>, Vec<BoardMergeRequest>) {
         match self.cached_api.development_info(issue_id).await {
             Ok(info) => {
                 let branches = info
@@ -291,16 +291,16 @@ impl Board {
                         url: branch.url,
                     })
                     .collect_vec();
-                let pull_requests = info
-                    .pull_requests
+                let merge_requests = info
+                    .merge_requests
                     .into_iter()
-                    .map(|pull_request| BoardPullRequest {
-                        name: pull_request.name,
-                        status: pull_request.status,
-                        url: pull_request.url,
+                    .map(|merge_request| BoardMergeRequest {
+                        name: merge_request.name,
+                        status: merge_request.status,
+                        url: merge_request.url,
                     })
                     .collect_vec();
-                (branches, pull_requests)
+                (branches, merge_requests)
             }
             Err(error) => {
                 tracing::warn!("Failed to load development info: {}", error);
@@ -310,7 +310,7 @@ impl Board {
     }
 
     async fn load_epic(&self, key: String) -> Result<BoardEpicData> {
-        let response = self.cached_api.epic(&key).await?;
+        let response = self.cached_api.epic(key.clone()).await?;
 
         let short_name = response
             .fields
@@ -329,8 +329,8 @@ impl Board {
             .map(ToOwned::to_owned);
 
         let epic = BoardEpicData {
-            key: key.to_owned(),
             jira_link: format!("{}/browse/{}", self.api_host, key),
+            key,
             short_name,
             color,
         };

@@ -50,10 +50,10 @@ pub struct Issue {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct DevelopmentInfo {
     pub branches: Vec<Branch>,
-    pub pull_requests: Vec<PullRequest>,
+    #[serde(rename = "pullRequests")]
+    pub merge_requests: Vec<MergeRequest>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -63,7 +63,7 @@ pub struct Branch {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct PullRequest {
+pub struct MergeRequest {
     pub name: String,
     pub status: String,
     pub url: String,
@@ -73,7 +73,7 @@ impl JiraApi {
     pub fn new(config: &Config) -> Self {
         JiraApi {
             client: Client::builder()
-                .timeout(Duration::from_secs(5))
+                .timeout(Duration::from_secs(config.api_timeout_seconds))
                 .build()
                 .unwrap(),
             api_host: config.api_host.clone(),
@@ -94,13 +94,13 @@ impl JiraApi {
     }
 
     pub async fn board_configuration(&self, id: &str) -> Result<BoardConfiguration> {
-        tracing::info!("Load board configuration for {}", id);
+        tracing::debug!("Load board configuration for {}", id);
         self.get(&format!("rest/agile/1.0/board/{}/configuration", id), &())
             .await
     }
 
     pub async fn board_issues(&self, id: &str, fields: &str, jql: &str) -> Result<BoardIssues> {
-        tracing::info!("Load board issues for {}", id);
+        tracing::debug!("Load board issues for {}", id);
         self.get(
             &format!("rest/agile/1.0/board/{}/issue", id),
             &[("fields", fields), ("jql", jql)],
@@ -109,12 +109,12 @@ impl JiraApi {
     }
 
     pub async fn issue(&self, key: &str) -> Result<Issue> {
-        tracing::info!("Load issue {}", key);
+        tracing::debug!("Load issue {}", key);
         self.get(&format!("rest/api/2/issue/{}", key), &()).await
     }
 
     pub async fn development_info(&self, issue_id: &str) -> Result<DevelopmentInfo> {
-        tracing::info!("Load development info for {}", issue_id);
+        tracing::debug!("Load development info for {}", issue_id);
 
         #[derive(Debug, Deserialize)]
         struct Response {
@@ -133,15 +133,15 @@ impl JiraApi {
             .await?;
 
         let mut branches = vec![];
-        let mut pull_requests = vec![];
+        let mut merge_requests = vec![];
         for detail in response.detail {
             branches.extend(detail.branches);
-            pull_requests.extend(detail.pull_requests);
+            merge_requests.extend(detail.merge_requests);
         }
 
         Ok(DevelopmentInfo {
             branches,
-            pull_requests,
+            merge_requests,
         })
     }
 

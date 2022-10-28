@@ -42,3 +42,12 @@ body {
 .issue-description {
     white-space: pre-wrap;
 }
+
+.issue-development-info > a {
+    color: inherit;
+    text-decoration: none;
+}
+
+.issue-development-info > a:hover {
+    text-decoration: underline;
+}
