@@ -1,8 +1,11 @@
+mod static_files;
+
 use crate::board::{Board, BoardData, BoardIssueData};
+use crate::commands::open_board::static_files::{StaticFile, StaticSource};
 use crate::config::Config;
 use anyhow::{ensure, Context, Error, Result};
 use axum::extract::Path;
-use axum::http::{header, HeaderValue, Method, StatusCode};
+use axum::http::{HeaderValue, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Extension, Json, Router, Server};
@@ -15,32 +18,20 @@ use std::time::{Duration, Instant};
 use tokio::task;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 
-async fn get_root() -> impl IntoResponse {
-    (
-        [(header::CONTENT_TYPE, "text/html")],
-        include_str!("../../resources/web/index.html"),
-    )
+async fn get_root(source: Extension<StaticSource>) -> impl IntoResponse {
+    StaticFile::IndexHtml.serve(source.0)
 }
 
-async fn get_js() -> impl IntoResponse {
-    (
-        [(header::CONTENT_TYPE, "text/javascript")],
-        include_str!("../../resources/web/index.js"),
-    )
+async fn get_js(source: Extension<StaticSource>) -> impl IntoResponse {
+    StaticFile::IndexJs.serve(source.0)
 }
 
-async fn get_css() -> impl IntoResponse {
-    (
-        [(header::CONTENT_TYPE, "text/css")],
-        include_str!("../../resources/web/index.css"),
-    )
+async fn get_css(source: Extension<StaticSource>) -> impl IntoResponse {
+    StaticFile::IndexCss.serve(source.0)
 }
 
-async fn get_favicon() -> impl IntoResponse {
-    (
-        [(header::CONTENT_TYPE, "image/png")],
-        include_bytes!("../../resources/web/favicon.png").as_slice(),
-    )
+async fn get_favicon(source: Extension<StaticSource>) -> impl IntoResponse {
+    StaticFile::Favicon.serve(source.0)
 }
 
 struct ApiError(Error);
@@ -74,9 +65,18 @@ async fn get_api_issue(
     Ok(Json(data))
 }
 
-pub async fn open_board(project_dirs: &ProjectDirs, board_name: &str) -> Result<()> {
+pub async fn open_board(
+    project_dirs: &ProjectDirs,
+    board_name: &str,
+    dev_mode: bool,
+) -> Result<()> {
     let config = Config::new(project_dirs)?;
 
+    let static_source = if dev_mode {
+        StaticSource::RunTime
+    } else {
+        StaticSource::CompileTime
+    };
     let board = Arc::new(Board::open(&config, board_name).await?);
 
     let server_port = config.server_port;
@@ -92,6 +92,7 @@ pub async fn open_board(project_dirs: &ProjectDirs, board_name: &str) -> Result<
         .route("/api/board", get(get_api_board))
         .route("/api/issue/:key", get(get_api_issue))
         .layer(Extension(board))
+        .layer(Extension(static_source))
         .layer(
             CorsLayer::new()
                 .allow_origin(AllowOrigin::predicate(|origin: &HeaderValue, _| {

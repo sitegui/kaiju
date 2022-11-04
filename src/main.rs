@@ -27,6 +27,10 @@ enum Command {
     OpenBoard {
         /// The name of the board, as defined in the config file
         board_name: String,
+        /// Serve the web resources directly from the local folder. Useful when developing Kaiju
+        /// itself
+        #[clap(long)]
+        dev_mode: bool,
     },
 }
 
@@ -42,8 +46,8 @@ async fn main() -> Result<()> {
     match args.command {
         Command::EditConfig => edit_config::edit_config(&project_dirs),
         Command::CreateIssue => create_issue::create_issue(&project_dirs).await,
-        Command::OpenBoard { board_name } => {
-            open_board::open_board(&project_dirs, &board_name).await
+        Command::OpenBoard { board_name, dev_mode } => {
+            open_board::open_board(&project_dirs, &board_name, dev_mode).await
         }
     }
 }
