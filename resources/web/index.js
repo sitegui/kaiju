@@ -114,8 +114,69 @@ appComponent.component('issue-details', {
     }
 })
 
-            if (response.key === this.detailedIssueKey) {
-                this.detailedIssue = response
+appComponent.component('issue-editor', {
+    props: [],
+    template: '#issue-editor',
+    data() {
+        return {
+            issueKey: null,
+            modal: null,
+            editor: null,
+            saving: false,
+        }
+    },
+    mounted() {
+        this.modal = new bootstrap.Modal(this.$refs.modal, {})
+
+        this.editor = ace.edit(this.$refs.editor)
+        this.editor.setTheme('ace/theme/github')
+        this.editor.session.setMode('ace/mode/markdown')
+        this.editor.session.setUseWrapMode(true)
+        this.editor.commands.addCommand({
+            name: 'save-issue',
+            bindKey: {win: 'Ctrl-Enter', mac: 'Command-Enter'},
+            exec: () => this.save(),
+            readOnly: true,
+        })
+    },
+    methods: {
+        create() {
+            this.editor.setValue('Loading...', -1)
+            this.editor.setReadOnly(true)
+            this.issueKey = null
+            this.modal.show()
+            this.saving = false
+
+            fetch('/api/new-issue-code').then(response => response.text()).then(issueCode => {
+                if (this.issueKey === null) {
+                    this.editor.setValue(issueCode, -1)
+                    this.editor.setReadOnly(false)
+                }
+            }).catch(console.error)
+        },
+        save() {
+            this._save().catch(console.error)
+        },
+        async _save() {
+            this.editor.setReadOnly(true)
+            this.saving = true
+
+            const url = this.issueKey === null ? '/api/issue' : `/api/issue/${this.issueKey}`
+            const code = this.editor.getValue()
+
+            try {
+                const response = await fetch(url, {method: 'POST', body: code})
+                if (!response.ok) {
+                    const body = await response.text()
+                    throw new Error(`Call failed with status ${response.status}:\n${body}`)
+                }
+                this.modal.hide()
+            } catch (error) {
+                const errorLines = String(error).split('\n').map(line => `-- ${line}`)
+                this.editor.setValue(errorLines.join('\n') + '\n\n' + code)
+            } finally {
+                this.saving = false
+                this.editor.setReadOnly(false)
             }
         }
     }
@@ -157,7 +218,7 @@ appComponent.component('relative-date', {
 })
 
 appComponent.component('board-column', {
-    props: ['name', 'issues'],
+    props: ['name', 'issues', 'isLast'],
     template: '#board-column',
 })
 

@@ -3,11 +3,12 @@ mod static_files;
 use crate::board::{Board, BoardData, BoardIssueData};
 use crate::commands::open_board::static_files::{StaticFile, StaticSource};
 use crate::config::Config;
-use anyhow::{ensure, Context, Error, Result};
+use crate::issue_code;
+use anyhow::{anyhow, ensure, Context, Error, Result};
 use axum::extract::Path;
 use axum::http::{HeaderValue, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::{Extension, Json, Router, Server};
 use directories::ProjectDirs;
 use std::net::IpAddr;
@@ -17,6 +18,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 use tokio::task;
 use tower_http::cors::{AllowOrigin, CorsLayer};
+
+struct ApiError(Error);
 
 async fn get_root(source: Extension<StaticSource>) -> impl IntoResponse {
     StaticFile::IndexHtml.serve(source.0)
@@ -32,20 +35,6 @@ async fn get_css(source: Extension<StaticSource>) -> impl IntoResponse {
 
 async fn get_favicon(source: Extension<StaticSource>) -> impl IntoResponse {
     StaticFile::Favicon.serve(source.0)
-}
-
-struct ApiError(Error);
-
-impl IntoResponse for ApiError {
-    fn into_response(self) -> Response {
-        (StatusCode::INTERNAL_SERVER_ERROR, format!("{:?}", self.0)).into_response()
-    }
-}
-
-impl From<Error> for ApiError {
-    fn from(error: Error) -> Self {
-        ApiError(error)
-    }
 }
 
 async fn get_api_board(
@@ -65,12 +54,29 @@ async fn get_api_issue(
     Ok(Json(data))
 }
 
+async fn get_new_issue_code(Extension(config): Extension<Arc<Config>>) -> Result<String, ApiError> {
+    let code = issue_code::new_issue(&config)?;
+    Ok(code)
+}
+
+async fn post_issue(code: String) -> Result<(), ApiError> {
+    tokio::time::sleep(Duration::from_secs(5)).await;
+
+    if code.contains("sitegui") {
+        return Err(ApiError(
+            anyhow!("failed").context("then").context("failed again"),
+        ));
+    }
+
+    Ok(())
+}
+
 pub async fn open_board(
     project_dirs: &ProjectDirs,
     board_name: &str,
     dev_mode: bool,
 ) -> Result<()> {
-    let config = Config::new(project_dirs)?;
+    let config = Arc::new(Config::new(project_dirs)?);
 
     let static_source = if dev_mode {
         StaticSource::RunTime
@@ -91,8 +97,11 @@ pub async fn open_board(
         .route("/favicon.png", get(get_favicon))
         .route("/api/board", get(get_api_board))
         .route("/api/issue/:key", get(get_api_issue))
+        .route("/api/new-issue-code", get(get_new_issue_code))
+        .route("/api/issue", post(post_issue))
         .layer(Extension(board))
         .layer(Extension(static_source))
+        .layer(Extension(config.clone()))
         .layer(
             CorsLayer::new()
                 .allow_origin(AllowOrigin::predicate(|origin: &HeaderValue, _| {
@@ -130,4 +139,16 @@ fn open_browser(url: &str) -> Result<()> {
     ensure!(status.success());
 
     Ok(())
+}
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        (StatusCode::INTERNAL_SERVER_ERROR, format!("{:?}", self.0)).into_response()
+    }
+}
+
+impl From<Error> for ApiError {
+    fn from(error: Error) -> Self {
+        ApiError(error)
+    }
 }

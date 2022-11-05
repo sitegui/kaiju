@@ -61,7 +61,10 @@
 
 <template id="board-column">
     <div class="col">
-        <h2>{{name}}</h2>
+        <h2>{{name}}
+            <button v-if="!isLast" type="button" class="btn btn-link btn-sm" @click="$emit('createIssue')">create new
+            </button>
+        </h2>
 
         <board-issue v-for="issue in issues" :key="issue.key" :issue-key="issue.key" :summary="issue.summary"
                      :status="issue.status" :avatars="issue.avatars" :epic="issue.epic" :branches="issue.branches"
@@ -128,6 +131,37 @@
             </div>
         </div>
     </div>
+</template>
+
+<template id="issue-editor">
+    <div class="modal fade" ref="modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h1 class="modal-title fs-5" id="edit-issue-modal-label">Create new issue</h1>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+
+                <div class="modal-body">
+                    <p>TODO: describe syntax</p>
+                    <div ref="editor" class="issue-code-editor"></div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Discard</button>
+                    <button type="button" class="btn btn-primary" @click="save" :disabled="saving">
+                        <span v-if="saving">Saving...</span>
+                        <span v-else>Save</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</template>
+
+<template id="app">
+    <issue-details ref="issueDetails"></issue-details>
+    <issue-editor ref="issueEditor"></issue-editor>
 
     <div class="container-fluid p-2">
         <nav class="navbar navbar-expand-lg navbar-dark bg-primary fixed-top">
@@ -147,8 +181,9 @@
         </div>
         <div v-else>
             <div class="row">
-                <board-column v-for="column in columns" :key="column.name" :name="column.name"
-                              :issues="column.issues" @open-issue="openIssue"></board-column>
+                <board-column v-for="(column, index) in columns" :key="column.name" :name="column.name"
+                              :issues="column.issues" @open-issue="openIssue"
+                              :is-last="index === columns.length - 1" @create-issue="startCreation"></board-column>
             </div>
         </div>
     </div>
@@ -156,6 +191,8 @@
 
 <div id="main"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/ace-builds@1.12.5/src-min-noconflict/ace.js"
+        integrity="sha256-PguD1rmGe3S8YGLSOnbZ/kMdpdBk2M5RGkV47UaQ/Vs=" crossorigin="anonymous"></script>
 <script src="index.js"></script>
 </body>
 </html>

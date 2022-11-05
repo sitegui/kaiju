@@ -51,3 +51,8 @@ body {
 .issue-development-info > a:hover {
     text-decoration: underline;
 }
+
+.issue-code-editor {
+    height: 30em;
+    font-size: 1em;
+}

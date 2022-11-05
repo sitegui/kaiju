@@ -2,6 +2,7 @@ mod ask_user_edit;
 mod board;
 mod commands;
 mod config;
+mod issue_code;
 mod jira_api;
 mod local_jira_cache;
 
@@ -46,8 +47,9 @@ async fn main() -> Result<()> {
     match args.command {
         Command::EditConfig => edit_config::edit_config(&project_dirs),
         Command::CreateIssue => create_issue::create_issue(&project_dirs).await,
-        Command::OpenBoard { board_name, dev_mode } => {
-            open_board::open_board(&project_dirs, &board_name, dev_mode).await
-        }
+        Command::OpenBoard {
+            board_name,
+            dev_mode,
+        } => open_board::open_board(&project_dirs, &board_name, dev_mode).await,
     }
 }
