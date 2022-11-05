@@ -47,12 +47,13 @@
             <p class="card-text small issue-development-info" v-if="branches.length || mergeRequests.length">
                 <span v-if="mergeRequests.length > 1">{{mergeRequests.length}} x <i
                         class="fa-regular fa-code-pull-request"></i></span>
-                <a v-else-if="mergeRequests.length == 1" :href="mergeRequests[0].url" :title="mergeRequests[0].name"
+                <a v-else-if="mergeRequests.length === 1" :href="mergeRequests[0].url" :title="mergeRequests[0].name"
                    target="_blank" @click.stop>{{mergeRequests[0].status}}
                     <i class="fa-regular fa-code-pull-request"></i></a>
                 <span v-else-if="branches.length > 1">{{branches.length}} x <i
                         class="fa-regular fa-code-branch"></i></span>
-                <span v-else-if="branches.length == 1" :title="branches[0].name"><i class="fa-regular fa-code-branch"></i></span>
+                <span v-else-if="branches.length === 1" :title="branches[0].name"><i
+                        class="fa-regular fa-code-branch"></i></span>
             </p>
         </div>
     </div>
@@ -72,58 +73,57 @@
 
 <template id="relative-date"><span>{{text}}</span></template>
 
-<template id="app">
-    <div class="modal fade" id="issue-detail-modal" tabindex="-1" aria-labelledby="issue-detail-modal-label"
-         aria-hidden="true">
-        <div class="modal-dialog modal-lg">
+<template id="issue-details">
+    <div class="modal fade" ref="modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h1 class="modal-title fs-5" id="issue-detail-modal-label">Issue {{detailedIssueKey}}</h1>
+                    <h1 class="modal-title fs-5" id="issue-detail-modal-label">Issue {{issueKey}}</h1>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
 
-                <div class="modal-body" v-if="detailedIssue">
-                    <h3>{{detailedIssue.summary}}</h3>
-                    <p><a :href="detailedIssue.jira_link" target="_blank">View in Jira</a></p>
+                <div v-if="!loaded" class="modal-body d-flex align-items-center p-3">
+                    <strong>Loading...</strong>
+                    <div class="spinner-border m-3"></div>
+                </div>
+                <div v-else class="modal-body">
+                    <h3>{{summary}}</h3>
+                    <p><a :href="jiraLink" target="_blank">View in Jira</a></p>
 
-                    <p><strong>Status</strong>: {{detailedIssue.status}}</p>
+                    <p><strong>Status</strong>: {{status}}</p>
 
-                    <p class="issue-description">{{detailedIssue.description}}</p>
+                    <p class="issue-description">{{description}}</p>
 
-                    <p v-if="detailedIssue.epic">
-                        <strong>Epic</strong>: <span class="badge badge-primary issue-epic"
-                                                     :style="{backgroundColor: detailedIssue.epic.color}"
-                                                     :title="detailedIssue.epic.key"
-                                                     @click="openIssue(detailedIssue.epic.key)">
-                            {{detailedIssue.epic.short_name}}
+                    <p v-if="epic">
+                        <strong>Epic</strong>:
+                        <span class="badge badge-primary issue-epic" :style="{backgroundColor: epic.color}"
+                              :title="epic.key" @click="open(epic.key)">
+                            {{epic.short_name}}
                         </span>
                     </p>
 
                     <p>
-                        <strong>Users</strong>: <img v-for="avatar in detailedIssue.avatars" :key="avatar.name"
+                        <strong>Users</strong>: <img v-for="avatar in avatars" :key="avatar.name"
                                                      class="avatar" :src="avatar.image"
                                                      :title="avatar.name">
                     </p>
 
-                    <div v-if="detailedIssue.branches.length">
+                    <div v-if="branches.length">
                         <p><strong>Branches</strong>:</p>
                         <ul>
-                            <li v-for="branch in detailedIssue.branches" :key="branch.name">{{branch.name}}</li>
+                            <li v-for="(branch, index) in branches" :key="index">{{branch.name}}</li>
                         </ul>
                     </div>
 
-                    <div v-if="detailedIssue.merge_requests.length">
+                    <div v-if="mergeRequests.length">
                         <p><strong>Merge requests</strong>:</p>
                         <ul>
-                            <li v-for="merge_request in detailedIssue.merge_requests" :key="merge_request.name">
-                                <a :href="merge_request.url" target="_blank">{{merge_request.status}} - {{merge_request.name}}</a>
+                            <li v-for="(mergeRequest, index) in mergeRequests" :key="index">
+                                <a :href="mergeRequest.url" target="_blank">{{mergeRequest.status}} -
+                                    {{mergeRequest.name}}</a>
                             </li>
                         </ul>
                     </div>
-                </div>
-                <div class="modal-body d-flex align-items-center p-3" v-else>
-                    <strong>Loading...</strong>
-                    <div class="spinner-border m-3"></div>
                 </div>
             </div>
         </div>

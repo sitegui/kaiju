@@ -1,6 +1,3 @@
-const apiHost = ''
-// const apiHost = 'http://localhost:8017'
-
 const Utils = {
     plural(n, singular, plural) {
         const noun = n === 1 ? singular : plural
@@ -29,17 +26,7 @@ const appComponent = Vue.createApp({
             lastUpdate: new Date,
             name: null,
             columns: [],
-            detailedIssueKey: null,
-            detailedIssue: null,
         }
-    },
-    mounted() {
-        const modalEl = document.getElementById('issue-detail-modal')
-        this.issueDetailModal = new bootstrap.Modal(modalEl, {})
-        modalEl.addEventListener('hide.bs.modal', () => {
-            this.detailedIssueKey = null
-            this.detailedIssue = null
-        })
     },
     methods: {
         ...Utils,
@@ -50,13 +37,11 @@ const appComponent = Vue.createApp({
 
             this.loading = true
             try {
-                const response = await (await fetch(`${apiHost}/api/board`)).json()
+                const response = await (await fetch('/api/board')).json()
                 this.name = response.name
                 this.columns = response.columns
 
-                if (this.detailedIssueKey !== null) {
-                    await this.updateDetailedIssue()
-                }
+                await this.$refs.issueDetails.update()
 
                 this.loaded = true
                 this.lastUpdate = new Date
@@ -65,13 +50,69 @@ const appComponent = Vue.createApp({
             }
         },
         openIssue(key) {
-            this.issueDetailModal.show()
-            this.detailedIssueKey = key
-            this.detailedIssue = null
-            this.updateDetailedIssue().catch(console.error)
+            this.$refs.issueDetails.open(key)
         },
-        async updateDetailedIssue() {
-            const response = await (await fetch(`${apiHost}/api/issue/${this.detailedIssueKey}`)).json()
+        startCreation() {
+            this.$refs.issueEditor.create()
+        },
+    }
+})
+
+appComponent.component('issue-details', {
+    props: [],
+    template: '#issue-details',
+    data() {
+        return {
+            // General state
+            issueKey: null,
+            loaded: false,
+            modal: null,
+            // Details
+            avatars: null,
+            branches: null,
+            description: null,
+            epic: null,
+            jiraLink: null,
+            mergeRequests: null,
+            status: null,
+            summary: null,
+        }
+    },
+    mounted() {
+        const modalEl = this.$refs.modal
+        this.modal = new bootstrap.Modal(modalEl, {})
+        modalEl.addEventListener('hide.bs.modal', () => {
+            this.issueKey = null
+        })
+    },
+    methods: {
+        open(key) {
+            this.modal.show()
+            this.issueKey = key
+            this.loaded = false
+            this.update().catch(console.error)
+        },
+        async update() {
+            if (this.issueKey === null) {
+                return
+            }
+
+            const response = await (await fetch(`/api/issue/${this.issueKey}`)).json()
+
+            if (response.key === this.issueKey) {
+                this.loaded = true
+                this.avatars = response.avatars
+                this.branches = response.branches
+                this.description = response.description
+                this.epic = response.epic
+                this.jiraLink = response.jira_link
+                this.mergeRequests = response.merge_requests
+                this.status = response.status
+                this.summary = response.summary
+            }
+        },
+    }
+})
 
             if (response.key === this.detailedIssueKey) {
                 this.detailedIssue = response
