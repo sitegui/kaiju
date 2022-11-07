@@ -171,6 +171,7 @@ appComponent.component('issue-editor', {
                     throw new Error(`Call failed with status ${response.status}:\n${body}`)
                 }
                 this.modal.hide()
+                this.$emit('issue-created')
             } catch (error) {
                 const errorLines = String(error).split('\n').map(line => `-- ${line}`)
                 this.editor.setValue(errorLines.join('\n') + '\n\n' + code)

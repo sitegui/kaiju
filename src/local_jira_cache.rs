@@ -59,9 +59,9 @@ enum CacheEntryState<T> {
 }
 
 impl LocalJiraCache {
-    pub fn new(api: JiraApi, parallelism: usize, config: CacheConfig) -> Self {
+    pub fn new(api: Arc<JiraApi>, parallelism: usize, config: CacheConfig) -> Self {
         let inner = LocalJiraCacheInner {
-            api: Arc::new(api),
+            api,
             semaphore: Semaphore::new(parallelism),
             data: Default::default(),
             config,

@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeSet;
 use std::fmt::Write;
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub struct Board {
@@ -81,7 +82,7 @@ struct Column {
 }
 
 impl Board {
-    pub async fn open(config: &Config, board_name: &str) -> Result<Self> {
+    pub async fn open(config: &Config, api: Arc<JiraApi>, board_name: &str) -> Result<Self> {
         let board = config
             .board
             .get(board_name)
@@ -93,8 +94,6 @@ impl Board {
                 )
             })?
             .clone();
-
-        let api = JiraApi::new(config);
 
         Ok(Board {
             cached_api: LocalJiraCache::new(api, config.api_parallelism, config.cache.clone()),

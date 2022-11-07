@@ -4,7 +4,9 @@ use crate::board::{Board, BoardData, BoardIssueData};
 use crate::commands::open_board::static_files::{StaticFile, StaticSource};
 use crate::config::Config;
 use crate::issue_code;
-use anyhow::{anyhow, ensure, Context, Error, Result};
+use crate::issue_code::{parse_issue_markdown, prepare_api_body};
+use crate::jira_api::JiraApi;
+use anyhow::{ensure, Context, Error, Result};
 use axum::extract::Path;
 use axum::http::{HeaderValue, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
@@ -59,14 +61,17 @@ async fn get_new_issue_code(Extension(config): Extension<Arc<Config>>) -> Result
     Ok(code)
 }
 
-async fn post_issue(code: String) -> Result<(), ApiError> {
-    tokio::time::sleep(Duration::from_secs(5)).await;
+async fn post_issue(
+    code: String,
+    Extension(config): Extension<Arc<Config>>,
+    Extension(api): Extension<Arc<JiraApi>>,
+) -> Result<(), ApiError> {
+    let info = parse_issue_markdown(&code).context("Failed to parse Markdown")?;
+    let body = prepare_api_body(&config, info).context("Failed to prepare Jira API call")?;
 
-    if code.contains("sitegui") {
-        return Err(ApiError(
-            anyhow!("failed").context("then").context("failed again"),
-        ));
-    }
+    tracing::info!("Will request Jira API");
+    let key = api.create_issue(&body).await?;
+    tracing::info!("Created issue: {}/browse/{}", config.api_host, key);
 
     Ok(())
 }
@@ -83,7 +88,8 @@ pub async fn open_board(
     } else {
         StaticSource::CompileTime
     };
-    let board = Arc::new(Board::open(&config, board_name).await?);
+    let api = Arc::new(JiraApi::new(&config));
+    let board = Arc::new(Board::open(&config, api.clone(), board_name).await?);
 
     let server_port = config.server_port;
     tracing::info!(
@@ -99,6 +105,7 @@ pub async fn open_board(
         .route("/api/issue/:key", get(get_api_issue))
         .route("/api/new-issue-code", get(get_new_issue_code))
         .route("/api/issue", post(post_issue))
+        .layer(Extension(api))
         .layer(Extension(board))
         .layer(Extension(static_source))
         .layer(Extension(config.clone()))
@@ -143,7 +150,7 @@ fn open_browser(url: &str) -> Result<()> {
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        (StatusCode::INTERNAL_SERVER_ERROR, format!("{:?}", self.0)).into_response()
+        (StatusCode::INTERNAL_SERVER_ERROR, format!("{:#}", self.0)).into_response()
     }
 }
 
