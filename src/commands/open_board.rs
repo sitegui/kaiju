@@ -6,6 +6,7 @@ use crate::config::Config;
 use crate::issue_code;
 use crate::issue_code::{parse_issue_markdown, prepare_api_body};
 use crate::jira_api::JiraApi;
+use crate::local_jira_cache::LocalJiraCache;
 use anyhow::{ensure, Context, Error, Result};
 use axum::extract::Path;
 use axum::http::{HeaderValue, Method, StatusCode};
@@ -89,7 +90,12 @@ pub async fn open_board(
         StaticSource::CompileTime
     };
     let api = Arc::new(JiraApi::new(&config));
-    let board = Arc::new(Board::open(&config, api.clone(), board_name).await?);
+    let cached_api = Arc::new(LocalJiraCache::new(
+        api.clone(),
+        config.api_parallelism,
+        config.cache.clone(),
+    ));
+    let board = Arc::new(Board::open(&config, cached_api.clone(), board_name).await?);
 
     let server_port = config.server_port;
     tracing::info!(
@@ -106,6 +112,7 @@ pub async fn open_board(
         .route("/api/new-issue-code", get(get_new_issue_code))
         .route("/api/issue", post(post_issue))
         .layer(Extension(api))
+        .layer(Extension(cached_api))
         .layer(Extension(board))
         .layer(Extension(static_source))
         .layer(Extension(config.clone()))

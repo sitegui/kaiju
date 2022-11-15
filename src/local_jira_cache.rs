@@ -11,10 +11,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::{Notify, Semaphore};
 
 #[derive(Debug)]
-pub struct LocalJiraCache(Arc<LocalJiraCacheInner>);
-
-#[derive(Debug)]
-struct LocalJiraCacheInner {
+pub struct LocalJiraCache {
     api: Arc<JiraApi>,
     data: Mutex<HashMap<CacheKey, CacheEntry>>,
     semaphore: Semaphore,
@@ -60,27 +57,25 @@ enum CacheEntryState<T> {
 
 impl LocalJiraCache {
     pub fn new(api: Arc<JiraApi>, parallelism: usize, config: CacheConfig) -> Self {
-        let inner = LocalJiraCacheInner {
+        LocalJiraCache {
             api,
             semaphore: Semaphore::new(parallelism),
             data: Default::default(),
             config,
-        };
-
-        LocalJiraCache(Arc::new(inner))
+        }
     }
 
-    pub async fn board_configuration(&self, id: String) -> Result<BoardConfiguration> {
+    pub async fn board_configuration(self: &Arc<Self>, id: String) -> Result<BoardConfiguration> {
         self.get(
             CacheKey::BoardConfiguration { id: id.clone() },
-            Duration::from_secs(self.0.config.ttl_board_configuration_seconds),
+            Duration::from_secs(self.config.ttl_board_configuration_seconds),
             |api| async move { api.board_configuration(&id).await },
         )
         .await
     }
 
     pub async fn board_issues(
-        &self,
+        self: &Arc<Self>,
         id: String,
         fields: String,
         jql: String,
@@ -91,46 +86,51 @@ impl LocalJiraCache {
                 fields: fields.to_owned(),
                 jql: jql.to_owned(),
             },
-            Duration::from_secs(self.0.config.ttl_board_issues_seconds),
+            Duration::from_secs(self.config.ttl_board_issues_seconds),
             |api| async move { api.board_issues(&id, &fields, &jql).await },
         )
         .await
     }
 
-    pub async fn issue(&self, key: String) -> Result<Issue> {
+    pub async fn issue(self: &Arc<Self>, key: String) -> Result<Issue> {
         self.get(
             CacheKey::Issue {
                 key: key.to_owned(),
             },
-            Duration::from_secs(self.0.config.ttl_issue_seconds),
+            Duration::from_secs(self.config.ttl_issue_seconds),
             |api| async move { api.issue(&key).await },
         )
         .await
     }
 
-    pub async fn epic(&self, key: String) -> Result<Issue> {
+    pub async fn epic(self: &Arc<Self>, key: String) -> Result<Issue> {
         self.get(
             CacheKey::Issue {
                 key: key.to_owned(),
             },
-            Duration::from_secs(self.0.config.ttl_epic_seconds),
+            Duration::from_secs(self.config.ttl_epic_seconds),
             |api| async move { api.issue(&key).await },
         )
         .await
     }
 
-    pub async fn development_info(&self, issue_id: String) -> Result<DevelopmentInfo> {
+    pub async fn development_info(self: &Arc<Self>, issue_id: String) -> Result<DevelopmentInfo> {
         self.get(
             CacheKey::DevelopmentInfo {
                 issue_id: issue_id.to_owned(),
             },
-            Duration::from_secs(self.0.config.ttl_development_info_seconds),
+            Duration::from_secs(self.config.ttl_development_info_seconds),
             |api| async move { api.development_info(&issue_id).await },
         )
         .await
     }
 
-    async fn get<T, G, F>(&self, key: CacheKey, time_to_live: Duration, generate: G) -> Result<T>
+    async fn get<T, G, F>(
+        self: &Arc<Self>,
+        key: CacheKey,
+        time_to_live: Duration,
+        generate: G,
+    ) -> Result<T>
     where
         T: Clone + Send + Sync + 'static,
         G: Send + 'static + FnOnce(Arc<JiraApi>) -> F,
@@ -139,7 +139,7 @@ impl LocalJiraCache {
         loop {
             match self.cache_entry_state::<T>(key.clone()) {
                 CacheEntryState::Miss => {
-                    let inner = self.0.clone();
+                    let inner = self.clone();
                     let task = tokio::spawn(async move {
                         let permit = inner.semaphore.acquire().await.unwrap();
                         let value = generate(inner.api.clone()).await;
@@ -172,7 +172,7 @@ impl LocalJiraCache {
     }
 
     fn cache_entry_state<T: Clone + 'static>(&self, key: CacheKey) -> CacheEntryState<T> {
-        let mut data = self.0.data.lock();
+        let mut data = self.data.lock();
         match data.entry(key) {
             Entry::Vacant(vacant) => {
                 let notify = Arc::new(Notify::new());

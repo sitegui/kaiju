@@ -1,5 +1,4 @@
 use crate::config::{BoardLocalConfig, Config};
-use crate::jira_api::JiraApi;
 use crate::local_jira_cache::LocalJiraCache;
 use anyhow::{Context, Result};
 use futures::future;
@@ -12,7 +11,7 @@ use std::sync::Arc;
 
 #[derive(Debug)]
 pub struct Board {
-    cached_api: LocalJiraCache,
+    cached_api: Arc<LocalJiraCache>,
     api_host: String,
     local_config: BoardLocalConfig,
 }
@@ -82,7 +81,11 @@ struct Column {
 }
 
 impl Board {
-    pub async fn open(config: &Config, api: Arc<JiraApi>, board_name: &str) -> Result<Self> {
+    pub async fn open(
+        config: &Config,
+        cached_api: Arc<LocalJiraCache>,
+        board_name: &str,
+    ) -> Result<Self> {
         let board = config
             .board
             .get(board_name)
@@ -96,7 +99,7 @@ impl Board {
             .clone();
 
         Ok(Board {
-            cached_api: LocalJiraCache::new(api, config.api_parallelism, config.cache.clone()),
+            cached_api,
             api_host: config.api_host.clone(),
             local_config: board,
         })
