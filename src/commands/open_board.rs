@@ -72,7 +72,7 @@ async fn get_edit_issue_code(
     Ok(code)
 }
 
-async fn post_issue(
+async fn post_new_issue(
     code: String,
     Extension(config): Extension<Arc<Config>>,
     Extension(api): Extension<Arc<JiraApi>>,
@@ -85,6 +85,15 @@ async fn post_issue(
     tracing::info!("Created issue: {}/browse/{}", config.api_host, key);
 
     Ok(())
+}
+
+async fn post_edit_issue(
+    code: String,
+    Path(key): Path<String>,
+    Extension(config): Extension<Arc<Config>>,
+    Extension(api): Extension<Arc<JiraApi>>,
+) -> Result<(), ApiError> {
+    todo!()
 }
 
 pub async fn open_board(
@@ -121,7 +130,8 @@ pub async fn open_board(
         .route("/api/issue/:key", get(get_api_issue))
         .route("/api/new-issue-code", get(get_new_issue_code))
         .route("/api/edit-issue-code/:key", get(get_edit_issue_code))
-        .route("/api/issue", post(post_issue))
+        .route("/api/issue", post(post_new_issue))
+        .route("/api/issue/:key", post(post_edit_issue))
         .layer(Extension(api))
         .layer(Extension(cached_api))
         .layer(Extension(board))

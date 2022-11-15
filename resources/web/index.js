@@ -150,10 +150,11 @@ appComponent.component('issue-editor', {
     },
     methods: {
         create() {
+            this.modal.show()
             this.editor.setValue('Loading...', -1)
             this.editor.setReadOnly(true)
+            setInterval(() => this.editor.renderer.updateFull(), 0)
             this.issueKey = null
-            this.modal.show()
             this.saving = false
 
             fetch('/api/new-issue-code').then(response => response.text()).then(issueCode => {
@@ -164,10 +165,11 @@ appComponent.component('issue-editor', {
             }).catch(console.error)
         },
         edit(key) {
+            this.modal.show()
             this.editor.setValue('Loading...', -1)
             this.editor.setReadOnly(true)
+            setInterval(() => this.editor.renderer.updateFull(), 0)
             this.issueKey = key
-            this.modal.show()
             this.saving = false
 
             fetch(`/api/edit-issue-code/${key}`).then(response => response.text()).then(issueCode => {
