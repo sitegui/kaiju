@@ -5,6 +5,10 @@ use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 use std::fmt::Write;
 
+const COMMENT_PREFIX: &str = "<!--";
+const SEPARATOR: &str = ", ";
+const COMMENT_SUFFIX: &str = "-->";
+
 pub fn new_issue(config: &Config) -> Result<String> {
     let mut contents = String::new();
 
@@ -12,11 +16,10 @@ pub fn new_issue(config: &Config) -> Result<String> {
     writeln!(contents)?;
     writeln!(contents, "Description")?;
     writeln!(contents)?;
-    writeln!(contents, "```kaiju")?;
+    writeln!(contents, "# Kaiju")?;
+    writeln!(contents)?;
 
     write_default_kaiju_code(&mut contents, config)?;
-
-    writeln!(contents, "```")?;
 
     Ok(contents)
 }
@@ -28,7 +31,7 @@ fn write_default_kaiju_code(contents: &mut String, config: &Config) -> Result<()
                 write_kaiju_values(
                     contents,
                     &field.name,
-                    values,
+                    values.iter(),
                     field.default_value.as_deref(),
                 )?;
             }
@@ -61,30 +64,39 @@ fn write_default_kaiju_code(contents: &mut String, config: &Config) -> Result<()
 fn write_kaiju_values<'a>(
     contents: &mut String,
     field_name: &str,
-    values: impl IntoIterator<Item = &'a String>,
+    values: impl Iterator<Item = &'a String>,
     default_value: Option<&str>,
 ) -> Result<()> {
+    const MAX_LINE: usize = 80;
+
     if let Some(default_value) = default_value {
         writeln!(contents, "{}: {}", field_name, default_value)?;
     }
 
-    let other_values: Vec<_> = values
-        .into_iter()
-        .filter(|value| Some(value.as_str()) != default_value)
-        .collect();
-    if !other_values.is_empty() {
-        writeln!(
-            contents,
-            "# {}: {}",
-            field_name,
-            other_values.into_iter().format(", ")
-        )?;
+    let other_values = values.filter(|value| Some(value.as_str()) != default_value);
+
+    let mut pending_line = String::new();
+    for value in other_values {
+        if pending_line.is_empty() {
+            write!(pending_line, "{}{}: {}", COMMENT_PREFIX, field_name, value)?;
+        } else if pending_line.len() + SEPARATOR.len() + value.len() + COMMENT_SUFFIX.len()
+            <= MAX_LINE
+        {
+            write!(pending_line, "{}{}", SEPARATOR, value)?;
+        } else {
+            writeln!(contents, "{}{}", pending_line, COMMENT_SUFFIX)?;
+            pending_line = String::new();
+        }
+    }
+
+    if !pending_line.is_empty() {
+        writeln!(contents, "{}{}", pending_line, COMMENT_SUFFIX)?;
     }
 
     Ok(())
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct CreateIssue {
     summary: String,
     description: String,
@@ -105,11 +117,16 @@ pub fn parse_issue_markdown(source: &str) -> Result<CreateIssue> {
     let mut description_lines = vec![];
     let mut commands: BTreeMap<_, Vec<_>> = BTreeMap::new();
     let mut is_kaiju_code = false;
+    let mut has_kaiju_code = false;
     for line in lines {
+        let trimmed_line = line.trim();
         if is_kaiju_code {
-            if line == "```" {
+            if trimmed_line.starts_with("# ") {
                 is_kaiju_code = false;
-            } else if !line.starts_with('#') {
+                description_lines.push(line);
+            } else if !trimmed_line.starts_with(COMMENT_PREFIX)
+                || !trimmed_line.ends_with(COMMENT_SUFFIX)
+            {
                 let (command, value) = line.split_once(':').with_context(|| {
                     format!(
                         "Kaiju command must have a colon (:) separating name and value in {:?}",
@@ -119,14 +136,20 @@ pub fn parse_issue_markdown(source: &str) -> Result<CreateIssue> {
                 commands
                     .entry(command.trim().to_owned())
                     .or_default()
-                    .push(value.trim().to_owned());
+                    .extend(value.split(',').map(|value| value.trim().to_string()));
             }
-        } else if line == "```kaiju" {
+        } else if trimmed_line == "# Kaiju" {
             is_kaiju_code = true;
+            has_kaiju_code = true;
         } else {
             description_lines.push(line);
         }
     }
+
+    ensure!(
+        has_kaiju_code,
+        "No Kaiju section starting with '# Kaiju' was found"
+    );
 
     let description = description_lines
         .into_iter()
@@ -279,4 +302,44 @@ fn set_in_body(body: &mut Map<String, Value>, field: &str, value: String) -> Res
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_issue_markdown() {
+        let issue = parse_issue_markdown(
+            "#    Some summary  
+some  
+description 
+# Kaiju 
+command_1  : value_10
+command_2:    value_20 ,   value_21
+command_1: value_11
+<!--command_1: value_12-->
+# More
+even more description",
+        )
+        .unwrap();
+
+        assert_eq!(
+            issue,
+            CreateIssue {
+                summary: "Some summary".to_string(),
+                description: "some  \ndescription \n# More\neven more description".to_string(),
+                commands: BTreeMap::from_iter([
+                    (
+                        "command_1".to_string(),
+                        vec!["value_10".to_string(), "value_11".to_string()]
+                    ),
+                    (
+                        "command_2".to_string(),
+                        vec!["value_20".to_string(), "value_21".to_string()]
+                    )
+                ])
+            }
+        );
+    }
 }
