@@ -91,7 +91,8 @@
                 </div>
                 <div v-else class="modal-body">
                     <h3>{{summary}}</h3>
-                    <p><a :href="jiraLink" target="_blank">View in Jira</a></p>
+
+                    <p><button class="btn btn-primary btn-sm" @click="startEdit">Edit</button></p>
 
                     <p><strong>Status</strong>: {{status}}</p>
 
@@ -127,6 +128,8 @@
                             </li>
                         </ul>
                     </div>
+
+                    <p><a :href="jiraLink" target="_blank">View in Jira</a></p>
                 </div>
             </div>
         </div>
@@ -138,7 +141,10 @@
         <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h1 class="modal-title fs-5" id="edit-issue-modal-label">Create new issue</h1>
+                    <h1 class="modal-title fs-5" id="edit-issue-modal-label">
+                        <span v-if="issueKey">Edit issue {{issueKey}}</span>
+                        <span v-else>Create new issue</span>
+                    </h1>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
 
@@ -159,7 +165,7 @@
 </template>
 
 <template id="app">
-    <issue-details ref="issueDetails"></issue-details>
+    <issue-details ref="issueDetails" @edit-issue="startEdit"></issue-details>
     <issue-editor ref="issueEditor" @issue-created="update"></issue-editor>
 
     <div class="container-fluid p-2">

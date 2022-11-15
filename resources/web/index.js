@@ -57,6 +57,9 @@ const appComponent = Vue.createApp({
         startCreation() {
             this.$refs.issueEditor.create()
         },
+        startEdit(key) {
+            this.$refs.issueEditor.edit(key)
+        }
     }
 })
 
@@ -93,6 +96,10 @@ appComponent.component('issue-details', {
             this.issueKey = key
             this.loaded = false
             this.update().catch(console.error)
+        },
+        startEdit() {
+            this.$emit('editIssue', this.issueKey)
+            this.modal.hide()
         },
         async update() {
             if (this.issueKey === null) {
@@ -151,6 +158,20 @@ appComponent.component('issue-editor', {
 
             fetch('/api/new-issue-code').then(response => response.text()).then(issueCode => {
                 if (this.issueKey === null) {
+                    this.editor.setValue(issueCode, -1)
+                    this.editor.setReadOnly(false)
+                }
+            }).catch(console.error)
+        },
+        edit(key) {
+            this.editor.setValue('Loading...', -1)
+            this.editor.setReadOnly(true)
+            this.issueKey = key
+            this.modal.show()
+            this.saving = false
+
+            fetch(`/api/edit-issue-code/${key}`).then(response => response.text()).then(issueCode => {
+                if (this.issueKey === key) {
                     this.editor.setValue(issueCode, -1)
                     this.editor.setReadOnly(false)
                 }
