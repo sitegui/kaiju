@@ -62,6 +62,16 @@ async fn get_new_issue_code(Extension(config): Extension<Arc<Config>>) -> Result
     Ok(code)
 }
 
+async fn get_edit_issue_code(
+    Path(key): Path<String>,
+    Extension(config): Extension<Arc<Config>>,
+    Extension(api): Extension<Arc<LocalJiraCache>>,
+) -> Result<String, ApiError> {
+    let issue = api.issue(key).await?;
+    let code = issue_code::edit_issue(&config, issue.fields)?;
+    Ok(code)
+}
+
 async fn post_issue(
     code: String,
     Extension(config): Extension<Arc<Config>>,
@@ -110,6 +120,7 @@ pub async fn open_board(
         .route("/api/board", get(get_api_board))
         .route("/api/issue/:key", get(get_api_issue))
         .route("/api/new-issue-code", get(get_new_issue_code))
+        .route("/api/edit-issue-code/:key", get(get_edit_issue_code))
         .route("/api/issue", post(post_issue))
         .layer(Extension(api))
         .layer(Extension(cached_api))
@@ -157,6 +168,7 @@ fn open_browser(url: &str) -> Result<()> {
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
+        tracing::warn!("Will answer endpoint with error: {:?}", self.0);
         (StatusCode::INTERNAL_SERVER_ERROR, format!("{:#}", self.0)).into_response()
     }
 }

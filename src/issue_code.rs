@@ -1,14 +1,15 @@
-use crate::config::{Config, IssueFieldValuesConfig};
+use crate::config::{Config, IssueFieldConfig, IssueFieldValuesConfig};
 use anyhow::{ensure, Context, Result};
 use itertools::Itertools;
 use serde_json::{Map, Value};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 
 const COMMENT_PREFIX: &str = "<!--";
 const SEPARATOR: &str = ", ";
 const COMMENT_SUFFIX: &str = "-->";
 
+/// Return the Kaiju markdown code to create a new issue
 pub fn new_issue(config: &Config) -> Result<String> {
     let mut contents = String::new();
 
@@ -19,40 +20,75 @@ pub fn new_issue(config: &Config) -> Result<String> {
     writeln!(contents, "# Kaiju")?;
     writeln!(contents)?;
 
-    write_default_kaiju_code(&mut contents, config)?;
+    for issue_field in &config.issue_fields {
+        write_default_kaiju_code(
+            &mut contents,
+            config,
+            issue_field,
+            issue_field.default_value.iter(),
+        )?;
+    }
 
     Ok(contents)
 }
 
-fn write_default_kaiju_code(contents: &mut String, config: &Config) -> Result<()> {
-    for field in &config.issue_fields {
-        match &field.values {
-            IssueFieldValuesConfig::Simple { values } => {
-                write_kaiju_values(
-                    contents,
-                    &field.name,
-                    values.iter(),
-                    field.default_value.as_deref(),
-                )?;
-            }
-            IssueFieldValuesConfig::FromBag { values_from } => {
-                match config.value_bag.get(values_from) {
-                    None => {
-                        tracing::warn!(
-                            "Missing value bag {:?} for field {:?}",
-                            values_from,
-                            field.name
-                        );
-                        writeln!(contents, "# {}:", field.name)?;
-                    }
-                    Some(bag) => {
-                        write_kaiju_values(
-                            contents,
-                            &field.name,
-                            bag.keys(),
-                            field.default_value.as_deref(),
-                        )?;
-                    }
+/// Return the Kaiju markdown code to edit the given issue (as returned by Jira's API).
+/// Only the fields declared in the config will be considered.
+pub fn edit_issue(config: &Config, fields: Value) -> Result<String> {
+    let mut contents = String::new();
+
+    let summary = fields
+        .get("summary")
+        .and_then(|value| value.as_str())
+        .context("Could not extract summary field")?;
+
+    let description = fields
+        .get("description")
+        .and_then(|value| value.as_str())
+        .context("Could not extract description field")?;
+
+    writeln!(contents, "# {}", summary)?;
+    writeln!(contents)?;
+    writeln!(contents, "{}", description)?;
+    writeln!(contents)?;
+    writeln!(contents, "# Kaiju")?;
+    writeln!(contents)?;
+
+    let mut body = Map::new();
+    body.insert("fields".to_string(), fields);
+    for issue_field in &config.issue_fields {
+        let current_values = get_in_body(&body, &issue_field.api_field).with_context(|| {
+            tracing::warn!("Body is {:?}", body);
+            format!("Failed to get current values for {}", issue_field.api_field)
+        })?;
+        write_default_kaiju_code(&mut contents, config, issue_field, current_values.iter())?;
+    }
+
+    Ok(contents)
+}
+
+fn write_default_kaiju_code<'a>(
+    contents: &mut String,
+    config: &Config,
+    issue_field: &IssueFieldConfig,
+    current_values: impl Iterator<Item = &'a String>,
+) -> Result<()> {
+    match &issue_field.values {
+        IssueFieldValuesConfig::Simple { values } => {
+            write_kaiju_values(contents, &issue_field.name, values.iter(), current_values)?;
+        }
+        IssueFieldValuesConfig::FromBag { values_from } => {
+            match config.value_bag.get(values_from) {
+                None => {
+                    tracing::warn!(
+                        "Missing value bag {:?} for field {:?}",
+                        values_from,
+                        issue_field.name
+                    );
+                    writeln!(contents, "# {}:", issue_field.name)?;
+                }
+                Some(bag) => {
+                    write_kaiju_values(contents, &issue_field.name, bag.keys(), current_values)?;
                 }
             }
         }
@@ -61,19 +97,21 @@ fn write_default_kaiju_code(contents: &mut String, config: &Config) -> Result<()
     Ok(())
 }
 
-fn write_kaiju_values<'a>(
+fn write_kaiju_values<'a, 'b>(
     contents: &mut String,
     field_name: &str,
     values: impl Iterator<Item = &'a String>,
-    default_value: Option<&str>,
+    current_values: impl Iterator<Item = &'b String>,
 ) -> Result<()> {
     const MAX_LINE: usize = 80;
 
-    if let Some(default_value) = default_value {
-        writeln!(contents, "{}: {}", field_name, default_value)?;
+    let mut saw_values = BTreeSet::new();
+    for current_value in current_values {
+        saw_values.insert(current_value);
+        writeln!(contents, "{}: {}", field_name, current_value)?;
     }
 
-    let other_values = values.filter(|value| Some(value.as_str()) != default_value);
+    let other_values = values.filter(|value| !saw_values.contains(value));
 
     let mut pending_line = String::new();
     for value in other_values {
@@ -302,6 +340,83 @@ fn set_in_body(body: &mut Map<String, Value>, field: &str, value: String) -> Res
     }
 
     Ok(())
+}
+
+fn get_in_body(body: &Map<String, Value>, field: &str) -> Result<Vec<String>> {
+    let mut scopes = vec![body];
+    let parts = field.split('.').collect_vec();
+    let (&last_part, prefix_parts) = parts
+        .split_last()
+        .context("The api field must contain at least one path")?;
+
+    fn get_non_null<'a>(object: &'a Map<String, Value>, key: &str) -> Option<&'a Value> {
+        let value = object.get(key)?;
+        if value.is_null() {
+            None
+        } else {
+            Some(value)
+        }
+    }
+
+    // Navigate the hierarchy
+    for &part in prefix_parts {
+        let mut new_scopes = vec![];
+
+        match part.strip_suffix("[]") {
+            None => {
+                for scope in scopes {
+                    if let Some(sub_scope) = get_non_null(scope, part) {
+                        new_scopes.push(sub_scope.as_object().context("Expected object")?);
+                    }
+                }
+            }
+            Some(part) => {
+                for scope in scopes {
+                    if let Some(sub_scopes) = get_non_null(scope, part) {
+                        let sub_scopes = sub_scopes.as_array().context("Expected array")?;
+
+                        for sub_scope in sub_scopes {
+                            new_scopes.push(sub_scope.as_object().context("Expected object")?);
+                        }
+                    }
+                }
+            }
+        }
+
+        scopes = new_scopes;
+    }
+
+    // Read leaf values
+    let mut final_values = vec![];
+    match last_part.strip_suffix("[]") {
+        None => {
+            for scope in scopes {
+                if let Some(value) = get_non_null(scope, last_part) {
+                    final_values.push(value);
+                }
+            }
+        }
+        Some(last_part) => {
+            for scope in scopes {
+                if let Some(values) = get_non_null(scope, last_part) {
+                    let values = values.as_array().context("Expected array")?;
+
+                    final_values.extend(values);
+                }
+            }
+        }
+    }
+
+    // Extract strings
+    final_values
+        .into_iter()
+        .map(|value| {
+            value
+                .as_str()
+                .context("Expected string when reading")
+                .map(ToString::to_string)
+        })
+        .collect()
 }
 
 #[cfg(test)]
