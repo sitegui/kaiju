@@ -1,3 +1,5 @@
+'use strict'
+
 const Utils = {
     plural(n, singular, plural) {
         const noun = n === 1 ? singular : plural
@@ -129,7 +131,7 @@ appComponent.component('issue-editor', {
         this.modal = new bootstrap.Modal(this.$refs.modal, {})
 
         this.editor = ace.edit(this.$refs.editor)
-        this.editor.setTheme('ace/theme/github')
+        this.editor.setTheme('ace/theme/textmate')
         this.editor.session.setMode('ace/mode/markdown')
         this.editor.session.setUseWrapMode(true)
         this.editor.commands.addCommand({
