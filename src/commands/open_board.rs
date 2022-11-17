@@ -93,7 +93,13 @@ async fn post_edit_issue(
     Extension(config): Extension<Arc<Config>>,
     Extension(api): Extension<Arc<JiraApi>>,
 ) -> Result<(), ApiError> {
-    todo!()
+    let info = parse_issue_markdown(&code).context("Failed to parse Markdown")?;
+    let body = prepare_api_body(&config, info).context("Failed to prepare Jira API call")?;
+
+    tracing::info!("Will request Jira API");
+    api.edit_issue(&key, &body).await?;
+
+    Ok(())
 }
 
 pub async fn open_board(

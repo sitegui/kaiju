@@ -162,8 +162,9 @@ pub fn parse_issue_markdown(source: &str) -> Result<CreateIssue> {
             if trimmed_line.starts_with("# ") {
                 is_kaiju_code = false;
                 description_lines.push(line);
-            } else if !trimmed_line.starts_with(COMMENT_PREFIX)
-                || !trimmed_line.ends_with(COMMENT_SUFFIX)
+            } else if !trimmed_line.is_empty()
+                && (!trimmed_line.starts_with(COMMENT_PREFIX)
+                    || !trimmed_line.ends_with(COMMENT_SUFFIX))
             {
                 let (command, value) = line.split_once(':').with_context(|| {
                     format!(

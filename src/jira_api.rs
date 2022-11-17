@@ -1,8 +1,8 @@
 use crate::config::Config;
 use anyhow::Result;
-use reqwest::Client;
+use reqwest::{Client, RequestBuilder};
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Value;
 use std::time::Duration;
 
@@ -88,29 +88,61 @@ impl JiraApi {
             key: String,
         }
 
-        let response: Response = self.post("rest/api/2/issue", issue).await?;
+        let response: Response = self
+            .request(
+                self.client
+                    .post(format!("{}/rest/api/2/issue", self.api_host))
+                    .json(issue),
+            )
+            .await?;
 
         Ok(response.key)
     }
 
+    pub async fn edit_issue(&self, key: &str, issue: &Value) -> Result<()> {
+        #[derive(Debug, Deserialize)]
+        struct Response {}
+
+        self.client
+            .put(format!("{}/rest/api/2/issue/{}", self.api_host, key))
+            .json(issue)
+            .basic_auth(&self.email, Some(&self.token))
+            .send()
+            .await?
+            .error_for_status()?;
+
+        Ok(())
+    }
+
     pub async fn board_configuration(&self, id: &str) -> Result<BoardConfiguration> {
         tracing::debug!("Load board configuration for {}", id);
-        self.get(&format!("rest/agile/1.0/board/{}/configuration", id), &())
-            .await
+        self.request(self.client.get(format!(
+            "{}/rest/agile/1.0/board/{}/configuration",
+            self.api_host, id
+        )))
+        .await
     }
 
     pub async fn board_issues(&self, id: &str, fields: &str, jql: &str) -> Result<BoardIssues> {
         tracing::debug!("Load board issues for {}", id);
-        self.get(
-            &format!("rest/agile/1.0/board/{}/issue", id),
-            &[("fields", fields), ("jql", jql)],
+        self.request(
+            self.client
+                .get(format!(
+                    "{}/rest/agile/1.0/board/{}/issue",
+                    self.api_host, id
+                ))
+                .query(&[("fields", fields), ("jql", jql)]),
         )
         .await
     }
 
     pub async fn issue(&self, key: &str) -> Result<Issue> {
         tracing::debug!("Load issue {}", key);
-        self.get(&format!("rest/api/2/issue/{}", key), &()).await
+        self.request(
+            self.client
+                .get(format!("{}/rest/api/2/issue/{}", self.api_host, key)),
+        )
+        .await
     }
 
     pub async fn development_info(&self, issue_id: &str) -> Result<DevelopmentInfo> {
@@ -122,13 +154,17 @@ impl JiraApi {
         }
 
         let response: Response = self
-            .get(
-                "rest/dev-status/latest/issue/detail",
-                &[
-                    ("issueId", issue_id),
-                    ("applicationType", "githube"),
-                    ("dataType", "pullrequest"),
-                ],
+            .request(
+                self.client
+                    .get(format!(
+                        "{}/rest/dev-status/latest/issue/detail",
+                        self.api_host
+                    ))
+                    .query(&[
+                        ("issueId", issue_id),
+                        ("applicationType", "githube"),
+                        ("dataType", "pullrequest"),
+                    ]),
             )
             .await?;
 
@@ -145,26 +181,8 @@ impl JiraApi {
         })
     }
 
-    async fn post<T: DeserializeOwned>(&self, path: &str, body: &impl Serialize) -> Result<T> {
-        let response = self
-            .client
-            .post(format!("{}/{}", self.api_host, path))
-            .basic_auth(&self.email, Some(&self.token))
-            .json(body)
-            .send()
-            .await?
-            .error_for_status()?
-            .json()
-            .await?;
-
-        Ok(response)
-    }
-
-    async fn get<T: DeserializeOwned>(&self, path: &str, query: &impl Serialize) -> Result<T> {
-        let response = self
-            .client
-            .get(format!("{}/{}", self.api_host, path))
-            .query(query)
+    async fn request<T: DeserializeOwned>(&self, request: RequestBuilder) -> Result<T> {
+        let response = request
             .basic_auth(&self.email, Some(&self.token))
             .send()
             .await?
