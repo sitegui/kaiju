@@ -73,10 +73,23 @@ Bob = "23446662"
 "MVP" = "WEB-123"
 "Make CEO happy" = "WEB-311"
 
-[value_bag.transitions]
-"Design" = "1"
-"Implement" = "11"
-"Review" = "111"
+[[transitions]]
+id = "10"
+name = "Design"
+to_status = "Design"
+to_status_id = "1"
+
+[[transitions]]
+id = "20"
+name = "Implement"
+to_status = "Implement"
+to_status_id = "2"
+
+[[transitions]]
+id = "30"
+name = "Review"
+to_status = "Review"
+to_status_id = "3"
 
 [board.example]
 # The id of the board. It can be recovered from the URL

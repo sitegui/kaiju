@@ -517,6 +517,7 @@ description
 # Kaiju 
 command_1  : value_10
 command_2:    value_20 ,   value_21
+Transition: hi
 command_1: value_11
 <!--command_1: value_12-->
 # More
@@ -529,6 +530,7 @@ even more description",
             CreateIssue {
                 summary: "Some summary".to_string(),
                 description: "some  \ndescription \n# More\neven more description".to_string(),
+                transition: Some("hi".to_string()),
                 commands: BTreeMap::from_iter([
                     (
                         "command_1".to_string(),
