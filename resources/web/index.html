@@ -62,7 +62,7 @@
 <template id="board-column">
     <div class="col">
         <h2>{{name}}
-            <button v-if="!isLast" type="button" class="btn btn-link btn-sm" @click="$emit('createIssue')">create new
+            <button v-if="!isLast" type="button" class="btn btn-link btn-sm" @click="$emit('createIssue', this.statusIds)">create new
             </button>
         </h2>
 
@@ -92,7 +92,9 @@
                 <div v-else class="modal-body">
                     <h3>{{summary}}</h3>
 
-                    <p><button class="btn btn-primary btn-sm" @click="startEdit">Edit</button></p>
+                    <p>
+                        <button class="btn btn-primary btn-sm" @click="startEdit">Edit</button>
+                    </p>
 
                     <p><strong>Status</strong>: {{status}}</p>
 
@@ -188,7 +190,8 @@
             <div class="row">
                 <board-column v-for="(column, index) in columns" :key="column.name" :name="column.name"
                               :issues="column.issues" @open-issue="openIssue"
-                              :is-last="index === columns.length - 1" @create-issue="startCreation"></board-column>
+                              :is-last="index === columns.length - 1" :status-ids="column.status_ids"
+                              @create-issue="startCreation"></board-column>
             </div>
         </div>
     </div>

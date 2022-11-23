@@ -18,6 +18,7 @@ pub struct Config {
     pub server_ip: String,
     pub issue_fields: Vec<IssueFieldConfig>,
     pub value_bag: BTreeMap<String, BTreeMap<String, String>>,
+    pub transitions: Vec<TransitionConfig>,
     pub board: BTreeMap<String, BoardLocalConfig>,
     pub cache: CacheConfig,
 }
@@ -36,6 +37,14 @@ pub struct IssueFieldConfig {
 pub enum IssueFieldValuesConfig {
     Simple { values: Vec<String> },
     FromBag { values_from: String },
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct TransitionConfig {
+    pub id: String,
+    pub name: String,
+    pub to_status: String,
+    pub to_status_id: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]

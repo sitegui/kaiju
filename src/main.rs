@@ -24,10 +24,13 @@ enum Command {
     EditConfig,
     /// Create a new issue
     CreateIssue,
-    /// Open the Web interface
+    /// Open the Web interface in a browser
     OpenBoard {
         /// The name of the board, as defined in the config file
         board_name: String,
+        /// Does not force the open in a browser
+        #[clap(long)]
+        no_browser: bool,
         /// Serve the web resources directly from the local folder. Useful when developing Kaiju
         /// itself
         #[clap(long)]
@@ -49,7 +52,8 @@ async fn main() -> Result<()> {
         Command::CreateIssue => create_issue::create_issue(&project_dirs).await,
         Command::OpenBoard {
             board_name,
+            no_browser,
             dev_mode,
-        } => open_board::open_board(&project_dirs, &board_name, dev_mode).await,
+        } => open_board::open_board(&project_dirs, &board_name, no_browser, dev_mode).await,
     }
 }

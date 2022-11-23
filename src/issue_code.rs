@@ -1,16 +1,17 @@
 use crate::config::{Config, IssueFieldConfig, IssueFieldValuesConfig};
 use anyhow::{ensure, Context, Result};
 use itertools::Itertools;
-use serde_json::{Map, Value};
+use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 
 const COMMENT_PREFIX: &str = "<!--";
 const SEPARATOR: &str = ", ";
 const COMMENT_SUFFIX: &str = "-->";
+const TRANSITION_COMMAND: &str = "Transition";
 
 /// Return the Kaiju markdown code to create a new issue
-pub fn new_issue(config: &Config) -> Result<String> {
+pub fn new_issue(config: &Config, filter_status_ids: Option<&[String]>) -> Result<String> {
     let mut contents = String::new();
 
     writeln!(contents, "# Summary")?;
@@ -19,6 +20,26 @@ pub fn new_issue(config: &Config) -> Result<String> {
     writeln!(contents)?;
     writeln!(contents, "# Kaiju")?;
     writeln!(contents)?;
+
+    let transitions = config
+        .transitions
+        .iter()
+        .map(|transition| &transition.name)
+        .collect_vec();
+    let default_transition = config
+        .transitions
+        .iter()
+        .find(|transition| match filter_status_ids {
+            None => true,
+            Some(filter_status_ids) => filter_status_ids.contains(&transition.to_status_id),
+        })
+        .map(|transition| &transition.name);
+    write_kaiju_values(
+        &mut contents,
+        TRANSITION_COMMAND,
+        transitions.into_iter(),
+        default_transition.into_iter(),
+    )?;
 
     for issue_field in &config.issue_fields {
         write_default_kaiju_code(
@@ -54,14 +75,58 @@ pub fn edit_issue(config: &Config, fields: Value) -> Result<String> {
     writeln!(contents, "# Kaiju")?;
     writeln!(contents)?;
 
-    let mut body = Map::new();
-    body.insert("fields".to_string(), fields);
+    let transitions = config
+        .transitions
+        .iter()
+        .map(|transition| &transition.name)
+        .collect_vec();
+    write_kaiju_values(
+        &mut contents,
+        TRANSITION_COMMAND,
+        transitions.into_iter(),
+        None.into_iter(),
+    )?;
+
+    let fields_obj = fields.as_object().context("Failed to extract fields")?;
     for issue_field in &config.issue_fields {
-        let current_values = get_in_body(&body, &issue_field.api_field).with_context(|| {
-            tracing::warn!("Body is {:?}", body);
-            format!("Failed to get current values for {}", issue_field.api_field)
-        })?;
-        write_default_kaiju_code(&mut contents, config, issue_field, current_values.iter())?;
+        let current_values =
+            get_in_fields(fields_obj, &issue_field.api_field).with_context(|| {
+                tracing::warn!("Fields are {}", fields);
+                format!("Failed to get current values for {}", issue_field.api_field)
+            })?;
+
+        match &issue_field.values {
+            IssueFieldValuesConfig::Simple { values } => {
+                // Use values directly
+                write_kaiju_values(
+                    &mut contents,
+                    &issue_field.name,
+                    values.iter(),
+                    current_values.iter(),
+                )?;
+            }
+            IssueFieldValuesConfig::FromBag { values_from } => {
+                // Find the bag key that produces the value
+                let bag = config.value_bag.get(values_from).with_context(|| {
+                    format!(
+                        "Missing value bag {:?} for field {:?}",
+                        values_from, issue_field.name
+                    )
+                })?;
+
+                write_kaiju_values(
+                    &mut contents,
+                    &issue_field.name,
+                    bag.keys(),
+                    current_values.iter().map(|value| {
+                        bag.iter()
+                            .find(|&(_, bag_value)| bag_value == value)
+                            .map(|(key, _)| key)
+                            .unwrap_or(value)
+                    }),
+                )?;
+            }
+        }
     }
 
     Ok(contents)
@@ -78,19 +143,14 @@ fn write_default_kaiju_code<'a>(
             write_kaiju_values(contents, &issue_field.name, values.iter(), current_values)?;
         }
         IssueFieldValuesConfig::FromBag { values_from } => {
-            match config.value_bag.get(values_from) {
-                None => {
-                    tracing::warn!(
-                        "Missing value bag {:?} for field {:?}",
-                        values_from,
-                        issue_field.name
-                    );
-                    writeln!(contents, "# {}:", issue_field.name)?;
-                }
-                Some(bag) => {
-                    write_kaiju_values(contents, &issue_field.name, bag.keys(), current_values)?;
-                }
-            }
+            let bag = config.value_bag.get(values_from).with_context(|| {
+                format!(
+                    "Missing value bag {:?} for field {:?}",
+                    values_from, issue_field.name
+                )
+            })?;
+
+            write_kaiju_values(contents, &issue_field.name, bag.keys(), current_values)?;
         }
     }
 
@@ -136,9 +196,10 @@ fn write_kaiju_values<'a, 'b>(
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct CreateIssue {
-    summary: String,
-    description: String,
-    commands: BTreeMap<String, Vec<String>>,
+    pub summary: String,
+    pub description: String,
+    pub transition: Option<String>,
+    pub commands: BTreeMap<String, Vec<String>>,
 }
 
 pub fn parse_issue_markdown(source: &str) -> Result<CreateIssue> {
@@ -156,6 +217,7 @@ pub fn parse_issue_markdown(source: &str) -> Result<CreateIssue> {
     let mut commands: BTreeMap<_, Vec<_>> = BTreeMap::new();
     let mut is_kaiju_code = false;
     let mut has_kaiju_code = false;
+    let mut transition = None;
     for line in lines {
         let trimmed_line = line.trim();
         if is_kaiju_code {
@@ -172,10 +234,19 @@ pub fn parse_issue_markdown(source: &str) -> Result<CreateIssue> {
                         line
                     )
                 })?;
-                commands
-                    .entry(command.trim().to_owned())
-                    .or_default()
-                    .extend(value.split(',').map(|value| value.trim().to_string()));
+
+                if command == TRANSITION_COMMAND {
+                    ensure!(
+                        transition.is_none(),
+                        "The transition command can only be used once"
+                    );
+                    transition = Some(value.trim().to_string());
+                } else {
+                    commands
+                        .entry(command.trim().to_owned())
+                        .or_default()
+                        .extend(value.split(',').map(|value| value.trim().to_string()));
+                }
             }
         } else if trimmed_line == "# Kaiju" {
             is_kaiju_code = true;
@@ -200,19 +271,32 @@ pub fn parse_issue_markdown(source: &str) -> Result<CreateIssue> {
     Ok(CreateIssue {
         summary,
         description,
+        transition,
         commands,
     })
 }
 
 pub fn prepare_api_body(config: &Config, issue: CreateIssue) -> Result<Value> {
-    let mut body = Map::new();
+    let mut fields = Map::new();
 
-    set_in_body(&mut body, "fields.summary", issue.summary)?;
-    set_in_body(&mut body, "fields.description", issue.description)?;
+    set_in_fields(&mut fields, "summary", issue.summary)?;
+    set_in_fields(&mut fields, "description", issue.description)?;
 
     for (name, values) in issue.commands {
-        apply_command(config, &mut body, &name, values)
+        apply_command(config, &mut fields, &name, values)
             .with_context(|| format!("Failed to apply command {:?}", name))?;
+    }
+
+    let mut body = Map::new();
+    body.insert("fields".to_string(), Value::Object(fields));
+
+    if let Some(transition_name) = issue.transition {
+        let transition = config
+            .transitions
+            .iter()
+            .find(|transition| transition.name == transition_name)
+            .with_context(|| format!("Transition {} is not known", transition_name))?;
+        body.insert("transition".to_string(), json!({ "id": transition.id }));
     }
 
     Ok(Value::Object(body))
@@ -220,7 +304,7 @@ pub fn prepare_api_body(config: &Config, issue: CreateIssue) -> Result<Value> {
 
 fn apply_command(
     config: &Config,
-    body: &mut Map<String, Value>,
+    fields: &mut Map<String, Value>,
     name: &str,
     values: Vec<String>,
 ) -> Result<()> {
@@ -265,10 +349,10 @@ fn apply_command(
     for value in values {
         match command_translator {
             CommandTranslator::UnknownField => {
-                set_in_body(body, name, value)?;
+                set_in_fields(fields, name, value)?;
             }
             CommandTranslator::SimpleValue { api_field } => {
-                set_in_body(body, api_field, value)?;
+                set_in_fields(fields, api_field, value)?;
             }
             CommandTranslator::ValueBag {
                 api_field,
@@ -279,7 +363,7 @@ fn apply_command(
                     tracing::info!("Value {:?} not found in value bag {:?}", value, bag_name);
                     value
                 });
-                set_in_body(body, api_field, translated_value)?;
+                set_in_fields(fields, api_field, translated_value)?;
             }
         }
     }
@@ -287,8 +371,8 @@ fn apply_command(
     Ok(())
 }
 
-fn set_in_body(body: &mut Map<String, Value>, field: &str, value: String) -> Result<()> {
-    let mut scope = body;
+fn set_in_fields(fields: &mut Map<String, Value>, field: &str, value: String) -> Result<()> {
+    let mut scope = fields;
     let parts = field.split('.').collect_vec();
     let (&last_part, prefix_parts) = parts
         .split_last()
@@ -343,8 +427,8 @@ fn set_in_body(body: &mut Map<String, Value>, field: &str, value: String) -> Res
     Ok(())
 }
 
-fn get_in_body(body: &Map<String, Value>, field: &str) -> Result<Vec<String>> {
-    let mut scopes = vec![body];
+fn get_in_fields(fields: &Map<String, Value>, field: &str) -> Result<Vec<String>> {
+    let mut scopes = vec![fields];
     let parts = field.split('.').collect_vec();
     let (&last_part, prefix_parts) = parts
         .split_last()

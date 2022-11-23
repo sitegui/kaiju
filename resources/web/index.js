@@ -54,8 +54,8 @@ const appComponent = Vue.createApp({
         openIssue(key) {
             this.$refs.issueDetails.open(key)
         },
-        startCreation() {
-            this.$refs.issueEditor.create()
+        startCreation(statusIds) {
+            this.$refs.issueEditor.startCreation(statusIds)
         },
         startEdit(key) {
             this.$refs.issueEditor.edit(key)
@@ -149,7 +149,7 @@ appComponent.component('issue-editor', {
         })
     },
     methods: {
-        create() {
+        startCreation(statusIds) {
             this.modal.show()
             this.editor.setValue('Loading...', -1)
             this.editor.setReadOnly(true)
@@ -157,7 +157,8 @@ appComponent.component('issue-editor', {
             this.issueKey = null
             this.saving = false
 
-            fetch('/api/new-issue-code').then(response => response.text()).then(issueCode => {
+            const searchParams = new URLSearchParams({'status_ids': statusIds.join(',')})
+            fetch(`/api/new-issue-code?${searchParams}`).then(response => response.text()).then(issueCode => {
                 if (this.issueKey === null) {
                     this.editor.setValue(issueCode, -1)
                     this.editor.setReadOnly(false)
@@ -244,7 +245,7 @@ appComponent.component('relative-date', {
 })
 
 appComponent.component('board-column', {
-    props: ['name', 'issues', 'isLast'],
+    props: ['name', 'issues', 'isLast', 'statusIds'],
     template: '#board-column',
 })
 

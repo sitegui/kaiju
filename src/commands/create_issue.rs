@@ -10,7 +10,7 @@ use crate::jira_api::JiraApi;
 pub async fn create_issue(project_dirs: &ProjectDirs) -> Result<()> {
     let config: Config = Config::new(project_dirs)?;
 
-    let template = issue_code::new_issue(&config)?;
+    let template = issue_code::new_issue(&config, None)?;
     let mut issue_markdown = template.clone();
     let api_body = loop {
         issue_markdown = ask_user_edit(project_dirs, &issue_markdown, "md")?;

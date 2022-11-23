@@ -32,6 +32,7 @@ pub struct BoardData {
 pub struct BoardColumnData {
     name: String,
     issues: Vec<BoardIssueData>,
+    status_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -207,6 +208,7 @@ impl Board {
         Ok(BoardColumnData {
             name: column.name,
             issues,
+            status_ids: column.status_ids,
         })
     }
 

@@ -8,12 +8,14 @@ use crate::issue_code::{parse_issue_markdown, prepare_api_body};
 use crate::jira_api::JiraApi;
 use crate::local_jira_cache::LocalJiraCache;
 use anyhow::{ensure, Context, Error, Result};
-use axum::extract::Path;
+use axum::extract::{Path, Query};
 use axum::http::{HeaderValue, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Extension, Json, Router, Server};
 use directories::ProjectDirs;
+use itertools::Itertools;
+use serde::Deserialize;
 use std::net::IpAddr;
 use std::process::Command;
 use std::sync::Arc;
@@ -57,8 +59,21 @@ async fn get_api_issue(
     Ok(Json(data))
 }
 
-async fn get_new_issue_code(Extension(config): Extension<Arc<Config>>) -> Result<String, ApiError> {
-    let code = issue_code::new_issue(&config)?;
+#[derive(Debug, Deserialize)]
+struct GetNewIssueCodeQuery {
+    status_ids: String,
+}
+
+async fn get_new_issue_code(
+    Extension(config): Extension<Arc<Config>>,
+    Query(query): Query<GetNewIssueCodeQuery>,
+) -> Result<String, ApiError> {
+    let status_ids = query
+        .status_ids
+        .split(',')
+        .map(ToString::to_string)
+        .collect_vec();
+    let code = issue_code::new_issue(&config, Some(&status_ids))?;
     Ok(code)
 }
 
@@ -94,8 +109,18 @@ async fn post_edit_issue(
     Extension(api): Extension<Arc<JiraApi>>,
 ) -> Result<(), ApiError> {
     let info = parse_issue_markdown(&code).context("Failed to parse Markdown")?;
-    let body = prepare_api_body(&config, info).context("Failed to prepare Jira API call")?;
 
+    if let Some(transition_name) = &info.transition {
+        let transition = config
+            .transitions
+            .iter()
+            .find(|transition| &transition.name == transition_name)
+            .with_context(|| format!("Transition {} is not known", transition_name))?;
+
+        api.transition_issue(&key, &transition.id).await?;
+    }
+
+    let body = prepare_api_body(&config, info).context("Failed to prepare Jira API call")?;
     tracing::info!("Will request Jira API");
     api.edit_issue(&key, &body).await?;
 
@@ -105,6 +130,7 @@ async fn post_edit_issue(
 pub async fn open_board(
     project_dirs: &ProjectDirs,
     board_name: &str,
+    no_browser: bool,
     dev_mode: bool,
 ) -> Result<()> {
     let config = Arc::new(Config::new(project_dirs)?);
@@ -156,13 +182,15 @@ pub async fn open_board(
     let ip: IpAddr = config.server_ip.parse()?;
     let server = Server::bind(&(ip, server_port).into()).serve(app.into_make_service());
 
-    task::spawn_blocking(move || {
-        let url = format!("http://localhost:{}", server_port);
-        match open_browser(&url) {
-            Err(error) => tracing::warn!("Failed to open browser: {}", error),
-            Ok(()) => tracing::info!("Opened default browser"),
-        }
-    });
+    if !no_browser {
+        task::spawn_blocking(move || {
+            let url = format!("http://localhost:{}", server_port);
+            match open_browser(&url) {
+                Err(error) => tracing::warn!("Failed to open browser: {}", error),
+                Ok(()) => tracing::info!("Opened default browser"),
+            }
+        });
+    }
 
     server.await?;
 

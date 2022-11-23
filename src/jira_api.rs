@@ -3,7 +3,7 @@ use anyhow::Result;
 use reqwest::{Client, RequestBuilder};
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::time::Duration;
 
 #[derive(Debug)]
@@ -88,6 +88,7 @@ impl JiraApi {
             key: String,
         }
 
+        tracing::debug!("Create issue {}", issue);
         let response: Response = self
             .request(
                 self.client
@@ -100,18 +101,32 @@ impl JiraApi {
     }
 
     pub async fn edit_issue(&self, key: &str, issue: &Value) -> Result<()> {
-        #[derive(Debug, Deserialize)]
-        struct Response {}
+        tracing::debug!("Edit issue {}: {}", key, issue);
 
-        self.client
-            .put(format!("{}/rest/api/2/issue/{}", self.api_host, key))
-            .json(issue)
-            .basic_auth(&self.email, Some(&self.token))
-            .send()
-            .await?
-            .error_for_status()?;
+        self.request_no_output(
+            self.client
+                .put(format!("{}/rest/api/2/issue/{}", self.api_host, key))
+                .json(issue),
+        )
+        .await
+    }
 
-        Ok(())
+    pub async fn transition_issue(&self, key: &str, transition_id: &str) -> Result<()> {
+        tracing::debug!("Transition issue {} to {}", key, transition_id);
+
+        self.request_no_output(
+            self.client
+                .post(format!(
+                    "{}/rest/api/2/issue/{}/transitions",
+                    self.api_host, key
+                ))
+                .json(&json!({
+                    "transition": {
+                        "id": transition_id,
+                    }
+                })),
+        )
+        .await
     }
 
     pub async fn board_configuration(&self, id: &str) -> Result<BoardConfiguration> {
@@ -191,5 +206,15 @@ impl JiraApi {
             .await?;
 
         Ok(response)
+    }
+
+    async fn request_no_output(&self, request: RequestBuilder) -> Result<()> {
+        request
+            .basic_auth(&self.email, Some(&self.token))
+            .send()
+            .await?
+            .error_for_status()?;
+
+        Ok(())
     }
 }
