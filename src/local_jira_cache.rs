@@ -125,6 +125,13 @@ impl LocalJiraCache {
         .await
     }
 
+    /// Remove all loaded entries from the cache
+    pub fn clear(&self) {
+        self.data
+            .lock()
+            .retain(|_, value| matches!(value, CacheEntry::Loading(_)));
+    }
+
     async fn get<T, G, F>(
         self: &Arc<Self>,
         key: CacheKey,

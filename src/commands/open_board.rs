@@ -91,6 +91,7 @@ async fn post_new_issue(
     code: String,
     Extension(config): Extension<Arc<Config>>,
     Extension(api): Extension<Arc<JiraApi>>,
+    Extension(cached_api): Extension<Arc<LocalJiraCache>>,
 ) -> Result<(), ApiError> {
     let info = parse_issue_markdown(&code).context("Failed to parse Markdown")?;
     let body = prepare_api_body(&config, info).context("Failed to prepare Jira API call")?;
@@ -98,6 +99,8 @@ async fn post_new_issue(
     tracing::info!("Will request Jira API");
     let key = api.create_issue(&body).await?;
     tracing::info!("Created issue: {}/browse/{}", config.api_host, key);
+
+    cached_api.clear();
 
     Ok(())
 }
@@ -107,6 +110,7 @@ async fn post_edit_issue(
     Path(key): Path<String>,
     Extension(config): Extension<Arc<Config>>,
     Extension(api): Extension<Arc<JiraApi>>,
+    Extension(cached_api): Extension<Arc<LocalJiraCache>>,
 ) -> Result<(), ApiError> {
     let info = parse_issue_markdown(&code).context("Failed to parse Markdown")?;
 
@@ -123,6 +127,8 @@ async fn post_edit_issue(
     let body = prepare_api_body(&config, info).context("Failed to prepare Jira API call")?;
     tracing::info!("Will request Jira API");
     api.edit_issue(&key, &body).await?;
+
+    cached_api.clear();
 
     Ok(())
 }
