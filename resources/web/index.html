@@ -34,7 +34,7 @@
         <div class="card-body" @click="$emit('openIssue', issueKey)">
             <h3 class="card-title issue-summary">{{summary}}</h3>
             <p class="card-text" v-if="epic">
-                <span class="badge badge-primary issue-epic" :style="{backgroundColor: epic.color}"
+                <span class="badge badge-primary issue-epic" :style="{backgroundColor: epic.color || 'black'}"
                       :title="epic.key" @click.stop="$emit('openIssue', epic.key)">
                     {{epic.short_name}}
                 </span>

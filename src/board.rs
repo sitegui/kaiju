@@ -321,7 +321,7 @@ impl Board {
             .get(&self.local_config.epic_short_name)
             .unwrap_or(&Value::Null)
             .as_str()
-            .context("Could not extract short name for epic issue")?
+            .unwrap_or(&key)
             .to_owned();
 
         let color = self
