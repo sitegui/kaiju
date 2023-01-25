@@ -153,7 +153,7 @@ appComponent.component('issue-editor', {
             this.modal.show()
             this.editor.setValue('Loading...', -1)
             this.editor.setReadOnly(true)
-            setInterval(() => this.editor.renderer.updateFull(), 0)
+            setTimeout(() => this.editor.renderer.updateFull(), 0)
             this.issueKey = null
             this.saving = false
 
@@ -169,7 +169,7 @@ appComponent.component('issue-editor', {
             this.modal.show()
             this.editor.setValue('Loading...', -1)
             this.editor.setReadOnly(true)
-            setInterval(() => this.editor.renderer.updateFull(), 0)
+            setTimeout(() => this.editor.renderer.updateFull(), 0)
             this.issueKey = key
             this.saving = false
 
