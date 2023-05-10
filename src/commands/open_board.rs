@@ -8,11 +8,12 @@ use crate::issue_code::{parse_issue_markdown, prepare_api_body};
 use crate::jira_api::JiraApi;
 use crate::local_jira_cache::LocalJiraCache;
 use anyhow::{ensure, Context, Error, Result};
-use axum::extract::{Path, Query};
+use axum::extract::FromRef;
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderValue, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
-use axum::{Extension, Json, Router, Server};
+use axum::{Json, Router, Server};
 use directories::ProjectDirs;
 use itertools::Itertools;
 use serde::Deserialize;
@@ -26,25 +27,32 @@ use tower_http::cors::{AllowOrigin, CorsLayer};
 
 struct ApiError(Error);
 
-async fn get_root(source: Extension<StaticSource>) -> impl IntoResponse {
+#[derive(Debug, Clone, FromRef)]
+struct ApiState {
+    static_source: StaticSource,
+    board: Arc<Board>,
+    config: Arc<Config>,
+    cached_api: Arc<LocalJiraCache>,
+    api: Arc<JiraApi>,
+}
+
+async fn get_root(source: State<StaticSource>) -> impl IntoResponse {
     StaticFile::IndexHtml.serve(source.0)
 }
 
-async fn get_js(source: Extension<StaticSource>) -> impl IntoResponse {
+async fn get_js(source: State<StaticSource>) -> impl IntoResponse {
     StaticFile::IndexJs.serve(source.0)
 }
 
-async fn get_css(source: Extension<StaticSource>) -> impl IntoResponse {
+async fn get_css(source: State<StaticSource>) -> impl IntoResponse {
     StaticFile::IndexCss.serve(source.0)
 }
 
-async fn get_favicon(source: Extension<StaticSource>) -> impl IntoResponse {
+async fn get_favicon(source: State<StaticSource>) -> impl IntoResponse {
     StaticFile::Favicon.serve(source.0)
 }
 
-async fn get_api_board(
-    Extension(board): Extension<Arc<Board>>,
-) -> Result<Json<BoardData>, ApiError> {
+async fn get_api_board(State(board): State<Arc<Board>>) -> Result<Json<BoardData>, ApiError> {
     let start = Instant::now();
     let data = board.load().await?;
     tracing::info!("Got board data in {:.1}s", start.elapsed().as_secs_f64());
@@ -52,7 +60,7 @@ async fn get_api_board(
 }
 
 async fn get_api_issue(
-    Extension(board): Extension<Arc<Board>>,
+    State(board): State<Arc<Board>>,
     Path(key): Path<String>,
 ) -> Result<Json<BoardIssueData>, ApiError> {
     let data = board.issue(key).await?;
@@ -65,7 +73,7 @@ struct GetNewIssueCodeQuery {
 }
 
 async fn get_new_issue_code(
-    Extension(config): Extension<Arc<Config>>,
+    State(config): State<Arc<Config>>,
     Query(query): Query<GetNewIssueCodeQuery>,
 ) -> Result<String, ApiError> {
     let status_ids = query
@@ -79,8 +87,8 @@ async fn get_new_issue_code(
 
 async fn get_edit_issue_code(
     Path(key): Path<String>,
-    Extension(config): Extension<Arc<Config>>,
-    Extension(api): Extension<Arc<LocalJiraCache>>,
+    State(config): State<Arc<Config>>,
+    State(api): State<Arc<LocalJiraCache>>,
 ) -> Result<String, ApiError> {
     let issue = api.issue(key).await?;
     let code = issue_code::edit_issue(&config, issue.fields)?;
@@ -88,10 +96,10 @@ async fn get_edit_issue_code(
 }
 
 async fn post_new_issue(
+    State(config): State<Arc<Config>>,
+    State(api): State<Arc<JiraApi>>,
+    State(cached_api): State<Arc<LocalJiraCache>>,
     code: String,
-    Extension(config): Extension<Arc<Config>>,
-    Extension(api): Extension<Arc<JiraApi>>,
-    Extension(cached_api): Extension<Arc<LocalJiraCache>>,
 ) -> Result<(), ApiError> {
     let info = parse_issue_markdown(&code).context("Failed to parse Markdown")?;
     let body = prepare_api_body(&config, info).context("Failed to prepare Jira API call")?;
@@ -106,11 +114,11 @@ async fn post_new_issue(
 }
 
 async fn post_edit_issue(
-    code: String,
     Path(key): Path<String>,
-    Extension(config): Extension<Arc<Config>>,
-    Extension(api): Extension<Arc<JiraApi>>,
-    Extension(cached_api): Extension<Arc<LocalJiraCache>>,
+    State(config): State<Arc<Config>>,
+    State(api): State<Arc<JiraApi>>,
+    State(cached_api): State<Arc<LocalJiraCache>>,
+    code: String,
 ) -> Result<(), ApiError> {
     let info = parse_issue_markdown(&code).context("Failed to parse Markdown")?;
 
@@ -155,6 +163,7 @@ pub async fn open_board(
     let board = Arc::new(Board::open(&config, cached_api.clone(), board_name).await?);
 
     let server_port = config.server_port;
+    let ip: IpAddr = config.server_ip.parse()?;
     tracing::info!(
         "Will start local server on http://localhost:{}",
         server_port
@@ -170,11 +179,13 @@ pub async fn open_board(
         .route("/api/edit-issue-code/:key", get(get_edit_issue_code))
         .route("/api/issue", post(post_new_issue))
         .route("/api/issue/:key", post(post_edit_issue))
-        .layer(Extension(api))
-        .layer(Extension(cached_api))
-        .layer(Extension(board))
-        .layer(Extension(static_source))
-        .layer(Extension(config.clone()))
+        .with_state(ApiState {
+            api,
+            cached_api,
+            board,
+            static_source,
+            config,
+        })
         .layer(
             CorsLayer::new()
                 .allow_origin(AllowOrigin::predicate(|origin: &HeaderValue, _| {
@@ -185,7 +196,6 @@ pub async fn open_board(
                 }))
                 .allow_methods([Method::GET]),
         );
-    let ip: IpAddr = config.server_ip.parse()?;
     let server = Server::bind(&(ip, server_port).into()).serve(app.into_make_service());
 
     if !no_browser {
