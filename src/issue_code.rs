@@ -65,7 +65,11 @@ pub fn edit_issue(config: &Config, fields: Value) -> Result<String> {
 
     let description = fields
         .get("description")
-        .and_then(|value| value.as_str())
+        .and_then(|value| match value {
+            Value::Null => Some(""),
+            Value::String(text) => Some(text),
+            _ => None,
+        })
         .context("Could not extract description field")?;
 
     writeln!(contents, "# {}", summary)?;
