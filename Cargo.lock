@@ -678,7 +678,7 @@ dependencies = [
 
 [[package]]
 name = "kaiju"
-version = "0.9.3"
+version = "0.10.4"
 dependencies = [
  "anyhow",
  "axum",
