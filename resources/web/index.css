@@ -9,6 +9,10 @@ body {
     cursor: pointer;
 }
 
+.board-issue-flagged {
+    background-color: #fff0b3;
+}
+
 .issue-key {
 
 }

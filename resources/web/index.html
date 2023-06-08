@@ -30,7 +30,7 @@
 <body>
 
 <template id="board-issue">
-    <div class="card board-issue">
+    <div :class="['card', 'board-issue', {'board-issue-flagged': isFlagged}]">
         <div class="card-body" @click="$emit('openIssue', issueKey)">
             <h3 class="card-title issue-summary">{{summary}}</h3>
             <p class="card-text" v-if="epic">
@@ -42,7 +42,10 @@
             <p class="card-text text-end">
                 <img v-for="avatar in avatars" :key="avatar.name" class="avatar-small" :src="avatar.image"
                      :title="avatar.name">
-                <span class="text-muted issue-key m-1 float-start small" :title="status">{{issueKey}}</span>
+                <span class="text-muted issue-key m-1 float-start small" :title="status">
+                    {{issueKey}}
+                    <span v-if="isFlagged"><i class="fa-solid fa-flag"></i></span>
+                </span>
             </p>
             <p class="card-text small issue-development-info" v-if="branches.length || mergeRequests.length">
                 <span v-if="mergeRequests.length > 1">{{mergeRequests.length}} x <i
@@ -69,6 +72,7 @@
         <board-issue v-for="issue in issues" :key="issue.key" :issue-key="issue.key" :summary="issue.summary"
                      :status="issue.status" :avatars="issue.avatars" :epic="issue.epic" :branches="issue.branches"
                      :merge-requests="issue.merge_requests"
+                     :is-flagged="issue.is_flagged"
                      @open-issue="(key) => $emit('openIssue', key)"
         ></board-issue>
     </div>

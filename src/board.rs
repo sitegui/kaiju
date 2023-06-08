@@ -46,6 +46,7 @@ pub struct BoardIssueData {
     epic: Option<BoardEpicData>,
     branches: Vec<BoardBranch>,
     merge_requests: Vec<BoardMergeRequest>,
+    is_flagged: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Ord, PartialOrd, Eq, PartialEq)]
@@ -114,6 +115,9 @@ impl Board {
         request_fields.insert("parent");
         for card_avatar in &self.local_config.card_avatars {
             request_fields.insert(card_avatar);
+        }
+        if let Some(flag) = &self.local_config.flag {
+            request_fields.insert(flag);
         }
         let fields = request_fields.into_iter().join(",");
 
@@ -268,6 +272,11 @@ impl Board {
 
         let (branches, merge_requests) = self.load_development_info(id).await;
 
+        let is_flagged = match self.local_config.flag.as_ref() {
+            None => false,
+            Some(field) => !fields.get(field).unwrap_or(&Value::Null).is_null(),
+        };
+
         Ok(BoardIssueData {
             jira_link: format!("{}/browse/{}", self.api_host, key),
             key,
@@ -278,6 +287,7 @@ impl Board {
             epic,
             branches,
             merge_requests,
+            is_flagged,
         })
     }
 

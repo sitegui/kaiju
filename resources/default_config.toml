@@ -104,6 +104,8 @@ filter_last_column_resolved = "-7d"
 epic_short_name = "customfield_10009"
 # The field (if any) from which to load the color of the epic
 epic_color = "customfield_13624"
+# The field (if any) from which to load if the issue is flagged
+flag = "customfield_10002"
 
 [cache]
 ttl_board_configuration_seconds = 3600

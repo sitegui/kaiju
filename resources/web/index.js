@@ -250,7 +250,7 @@ appComponent.component('board-column', {
 })
 
 appComponent.component('board-issue', {
-    props: ['issueKey', 'summary', 'status', 'avatars', 'epic', 'branches', 'mergeRequests'],
+    props: ['issueKey', 'summary', 'status', 'avatars', 'epic', 'branches', 'mergeRequests', 'isFlagged'],
     template: '#board-issue',
     methods: {
         ...Utils,

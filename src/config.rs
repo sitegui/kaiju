@@ -55,6 +55,7 @@ pub struct BoardLocalConfig {
     pub filter_last_column_resolved: Option<String>,
     pub epic_short_name: String,
     pub epic_color: Option<String>,
+    pub flag: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
